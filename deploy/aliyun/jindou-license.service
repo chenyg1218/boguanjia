@@ -1,0 +1,18 @@
+[Unit]
+Description=Jindou license redeem API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/jindou-license
+Environment=JINDOU_DB=/opt/jindou-license/data/cards.db
+Environment=JINDOU_HOST=127.0.0.1
+Environment=JINDOU_PORT=8080
+EnvironmentFile=-/opt/jindou-license/secrets.env
+ExecStart=/usr/bin/python3 /opt/jindou-license/app.py
+Restart=always
+RestartSec=2
+User=root
+
+[Install]
+WantedBy=multi-user.target

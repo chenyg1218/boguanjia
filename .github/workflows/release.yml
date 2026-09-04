@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+defaults:
+  run:
+    working-directory: desktop
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: install dependencies
+        run: pnpm install
+
+      - name: build application
+        run: pnpm build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract changelog
+        id: changelog
+        run: |
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          node scripts/extract-changelog.js >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body: ${{ steps.changelog.outputs.notes }}
+          files: |
+            desktop/release/*/*.exe
+            desktop/release/*/*.dmg
+            desktop/release/*/*.blockmap
+            desktop/release/*/latest*.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

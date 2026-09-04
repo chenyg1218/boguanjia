@@ -1,0 +1,11 @@
+packages:
+  - '.'
+
+shamefullyHoist: true
+blockExoticSubdeps: false
+confirmModulesPurge: false
+
+allowBuilds:
+  electron: true
+  esbuild: true
+  electron-winstaller: true

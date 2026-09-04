@@ -1,0 +1,18 @@
+播管家（boguanjia）
+==================
+
+本产品包含基于以下开源软件的修改与衍生代码，按各自许可证要求保留声明：
+
+1. oba-live-tool
+   License: MIT
+   Copyright (c) 2025 qiutongxue
+   Source: https://github.com/qiutongxue/oba-live-tool
+
+2. electron-vite-react（oba-live-tool 上游）
+   License: MIT
+   Copyright (c) 2023 草鞋没号
+
+完整许可全文见同目录 LICENSE 文件。
+
+本产品自身版权：
+Copyright (c) 2025–2026 boguanjia（播管家）

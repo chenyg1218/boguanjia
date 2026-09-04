@@ -1,0 +1,18 @@
+{
+  "dwell_seconds": 300,
+  "dwell_interval_mode": "fixed",
+  "dwell_min_seconds": 30,
+  "dwell_max_seconds": 60,
+  "danmu_interval_seconds": 300,
+  "danmu_interval_mode": "fixed",
+  "danmu_interval_min_seconds": 30,
+  "danmu_interval_max_seconds": 60,
+  "enable_explain": true,
+  "enable_danmu": false,
+  "enable_reply": false,
+  "explain_mode": "single",
+  "explain_by_car": false,
+  "car_no": "",
+  "danmu_text": "",
+  "keyword_replies": []
+}

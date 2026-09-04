@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <!-- cyan -> purple, like ???? -->
+    <linearGradient id="neon" x1="12%" y1="8%" x2="88%" y2="92%">
+      <stop offset="0%" stop-color="#5CF0FF"/>
+      <stop offset="45%" stop-color="#7B6CFF"/>
+      <stop offset="100%" stop-color="#C44DFF"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="22"/>
+    </filter>
+    <clipPath id="app">
+      <rect x="0" y="0" width="512" height="512" rx="112" ry="112"/>
+    </clipPath>
+    <!-- shared C-ring path -->
+    <path id="cRing" d="
+      M256 72
+      C358 72 440 154 440 256
+      C440 358 358 440 256 440
+      C188 440 128 404 94 348
+      L148 314
+      C170 350 210 376 256 376
+      C322 376 376 322 376 256
+      C376 190 322 136 256 136
+      C214 136 178 156 158 188
+      L100 146
+      C132 96 190 72 256 72 Z
+    "/>
+    <path id="play" d="M214 178 L348 256 L214 334 Z"/>
+  </defs>
+
+  <g clip-path="url(#app)">
+    <rect width="512" height="512" fill="#000000"/>
+
+    <!-- outer neon bloom -->
+    <use href="#cRing" fill="url(#neon)" filter="url(#softGlow)" opacity="0.85"/>
+    <use href="#play" fill="url(#neon)" filter="url(#softGlow)" opacity="0.55"/>
+
+    <!-- tighter neon edge -->
+    <use href="#cRing" fill="url(#neon)" filter="url(#glow)" opacity="0.95"/>
+    <use href="#play" fill="url(#neon)" filter="url(#glow)" opacity="0.7"/>
+
+    <!-- white core (???? style) -->
+    <use href="#cRing" fill="#FFFFFF"/>
+    <use href="#play" fill="#FFFFFF"/>
+  </g>
+</svg>

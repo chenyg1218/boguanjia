@@ -1,0 +1,31 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.venv/
+venv/
+data/settings.json
+data/account.json
+data/account.dat
+data/profiles.json
+data/profiles/
+data/web_profile/
+data/web_profile_test/
+data/ui_cache/
+data/logs/
+!data/.gitkeep
+*.spec
+.idea/
+.tmp_pkgs/
+# 卡密库存（明文敏感，勿提交）
+out/
+# VC++ 运行库缓存（打包时自动下载，约 20MB+）
+third_party/vc_redist/
+# 核销服务端私钥 / API 密钥
+deploy/aliyun/secrets.env.local
+deploy/aliyun/*.seed
+deploy/aliyun/signing.seed*
+
