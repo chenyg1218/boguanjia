@@ -7,6 +7,10 @@
   "author": "boguanjia",
   "license": "MIT",
   "productName": "播管家",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chenyg1218/boguanjia.git"
+  },
   "main": "dist-electron/main/index.js",
   "debug": {
     "env": {

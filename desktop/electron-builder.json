@@ -6,6 +6,13 @@
   "directories": {
     "output": "release/${version}"
   },
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "chenyg1218",
+      "repo": "boguanjia"
+    }
+  ],
   "electronLanguages": ["zh-CN", "en-US"],
   "files": ["dist-electron", "dist", "LICENSE", "NOTICE"],
   "mac": {
