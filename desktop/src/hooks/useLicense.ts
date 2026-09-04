@@ -88,7 +88,7 @@ export function useLicenseBootstrap() {
     void refresh()
   }, [refresh])
 
-  useIpcListener(IPC_CHANNELS.license.changed, (_event, payload) => {
+  useIpcListener(IPC_CHANNELS.license.changed, payload => {
     const prevPro = useLicense.getState().status.isPro
     applyRemote(payload)
     // 运行中从专业版掉到免费版时提示（Guard 会处理多余账号）

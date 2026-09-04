@@ -15,6 +15,7 @@ jobs:
       contents: write
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
     steps:
@@ -40,6 +41,8 @@ jobs:
         run: pnpm build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # CI 无 Apple 签名证书时跳过自动发现，避免 macOS 打包失败
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Extract changelog
         id: changelog
