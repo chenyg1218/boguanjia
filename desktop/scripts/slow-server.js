@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.join(fileURLToPath(import.meta.url), '..', '..')
 
 const PORT = 8080
-const DIR = path.join(__dirname, 'release', '2.0.0') // 指向打包目录
+const DIR = path.join(__dirname, 'release', '1.0.0') // 指向打包目录
 const SPEED = 10 * 1024 * 1024 // 限制速度：1MB/s
 
 const server = http.createServer(async (req, res) => {

@@ -8,7 +8,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { app, net } from 'electron'
+import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { createLogger } from '#/logger'
+import { accountManager } from '#/managers/AccountManager'
+import windowManager from '#/windowManager'
 
 const logger = createLogger('授权')
 
@@ -24,6 +27,25 @@ const API_REQUEST_KEY_HEX =
 const USER_AGENT = 'Boguanjia/2.3 (+https://jindou.local)'
 /** 与金豆助手 auth._REDEEM_RETRIES 对齐 */
 const REDEEM_RETRIES = 3
+/** 专业版运行中本地兜底复检间隔（捕获凭证宽限过期等） */
+const LOCAL_FALLBACK_MS = 60_000
+/** 联网心跳间隔 */
+const HEARTBEAT_MS = 6 * 60 * 60 * 1000
+/** setTimeout 安全上限（约 24.8 天） */
+const MAX_TIMEOUT_MS = 2_147_483_647
+/** 与 Python auth._CLOCK_ROLLBACK_SEC 对齐：本地相对锚定倒退超过此值视为拨表 */
+const CLOCK_ROLLBACK_SEC = 3600
+/** 墙钟相对进程时间明显停滞/倒退的判定窗口 */
+const WALL_FREEZE_MONO_MS = 5 * 60 * 1000
+const FREE_DEFAULT_ACCOUNT_ID = 'default'
+const EXPIRED_RUNTIME_HINT =
+  '专业版已到期，已切换为免费版（仅 1 个账号）。请到「设置 → 收费计划」续充卡密'
+const LICENSE_ACCOUNT_DENIED =
+  '该账号已禁用（免费版仅可用默认账号），请续费专业版后使用，或切换到默认账号'
+const CLOCK_ANOMALY_HINT =
+  '检测到系统时间异常，授权已暂停。请恢复正确时间并联网后，到设置页点击刷新'
+const OFFLINE_MONOTONIC_HINT =
+  '已超过离线使用期限，请联网后重新校验授权（设置页点击刷新）'
 
 export interface LicenseState {
   expires_at: string
@@ -106,6 +128,18 @@ function b64urlDecode(text: string): Buffer {
 export class LicenseService {
   private state: LicenseState = emptyState()
   private cachedMachineId = ''
+  private watchStarted = false
+  private expireTimer: ReturnType<typeof setTimeout> | null = null
+  private fallbackTimer: ReturnType<typeof setInterval> | null = null
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  private lastEmittedKey = ''
+  private heartbeatInFlight = false
+  private clockRecoverInFlight = false
+  /** 距上次成功联网校验的进程单调时长（不受系统拨表影响） */
+  private monoMsWithoutSync = 0
+  private lastPerfNow = 0
+  private lastWallNow = 0
+  private wallFreezeSuspectedFlag = false
 
   private statePath() {
     return path.join(app.getPath('userData'), 'license-account.json')
@@ -192,7 +226,11 @@ export class LicenseService {
       .slice(0, 40)
   }
 
-  private verifyV2Token(token: string, expectMachineId: string): boolean {
+  private verifyV2Token(
+    token: string,
+    expectMachineId: string,
+    opts?: { nowMs?: number; expectExpiresLocal?: string },
+  ): boolean {
     if (!token.startsWith('v2.')) return false
     const parts = token.slice(3).split('.')
     if (parts.length !== 2) return false
@@ -220,10 +258,15 @@ export class LicenseService {
       const issued = parseServerTime(String(payload.i || ''))
       if (!issued) return false
       const grace = Math.max(1, Math.min(30, Number(payload.g) || 2))
-      const now = Date.now() / 1000
+      const now = (opts?.nowMs ?? Date.now()) / 1000
       const issuedTs = issued.getTime() / 1000
       if (now - issuedTs > grace * 86400) return false
       if (issuedTs - now > 3600) return false
+      // 载荷到期须能对上本地展示到期，防止只改 license-account.json
+      if (opts?.expectExpiresLocal) {
+        const tokenExpLocal = serverExpiresToLocal(String(payload.e || ''))
+        if (!tokenExpLocal || tokenExpLocal !== opts.expectExpiresLocal) return false
+      }
       return true
     } catch (err) {
       logger.warn('凭证验签失败', err)
@@ -231,12 +274,62 @@ export class LicenseService {
     }
   }
 
+  private clockRollbackSuspected(state: LicenseState): boolean {
+    const loc = parseLocal(state.clock_local_at)
+    if (!loc) return false
+    return (Date.now() - loc.getTime()) / 1000 < -CLOCK_ROLLBACK_SEC
+  }
+
+  /**
+   * 可信「现在」：优先用 server_time + 本地流逝时间。
+   * 拨表回退时不再用「冻结时间」续命，调用方应直接判定授权无效。
+   */
+  private trustedNow(state: LicenseState): Date {
+    const srv = parseServerTime(state.clock_server_at)
+    const loc = parseLocal(state.clock_local_at)
+    if (!srv || !loc) return new Date()
+    if (this.clockRollbackSuspected(state)) return new Date()
+    const deltaMs = Date.now() - loc.getTime()
+    return new Date(srv.getTime() + deltaMs)
+  }
+
+  /**
+   * 正式授权的时钟完整性：缺锚定、拨表回退、墙钟冻结均不通过。
+   * 清掉 license-account.json 里的 clock_* 再拨表也无法绕过。
+   */
+  private clockIntegrityOk(state: LicenseState): boolean {
+    if (!state.token) return true
+    if (this.resolveRedeemUrl()) {
+      if (!state.clock_server_at || !state.clock_local_at) return false
+    }
+    if (this.clockRollbackSuspected(state)) return false
+    if (this.wallFreezeSuspectedFlag) return false
+    return true
+  }
+
+  private offlineGraceOk(state: LicenseState): boolean {
+    const graceDays = Math.max(0, Math.min(this.config().offline_grace_days, 2))
+    // 进程单调时钟：系统时间冻住也无法无限离线
+    if (this.monoMsWithoutSync > graceDays * 86400000) return false
+
+    if (this.resolveRedeemUrl() && !state.clock_server_at && !state.last_validate_at) {
+      return false
+    }
+    if (!state.clock_server_at && !state.last_validate_at) return true
+    const anchor = parseLocal(state.last_validate_at) || parseLocal(state.clock_local_at)
+    if (!anchor) return true
+    return this.trustedNow(state).getTime() <= anchor.getTime() + graceDays * 86400000
+  }
+
   private tokenMatches(state: LicenseState): boolean {
     if (!state.expires_at || !state.token) return false
     const mid = this.machineFingerprint()
     if (state.machine_id && state.machine_id !== mid) return false
     if (state.token.startsWith('v2.')) {
-      return this.verifyV2Token(state.token, mid)
+      return this.verifyV2Token(state.token, mid, {
+        nowMs: this.trustedNow(state).getTime(),
+        expectExpiresLocal: state.expires_at,
+      })
     }
     // 仅开发态（无正式 redeem）接受本地 salt token
     if (this.resolveRedeemUrl()) return false
@@ -246,19 +339,41 @@ export class LicenseService {
   private isExpired(state: LicenseState): boolean {
     const exp = parseLocal(state.expires_at)
     if (!exp) return true
-    return exp.getTime() <= Date.now()
+    return exp.getTime() <= this.trustedNow(state).getTime()
   }
 
   isPro(): boolean {
     const state = this.state.expires_at ? this.state : this.load()
     if (!this.tokenMatches(state)) return false
+    if (!this.clockIntegrityOk(state)) return false
+    if (!this.offlineGraceOk(state)) return false
     if (this.isExpired(state)) return false
     return true
   }
 
+  /** 免费版仅允许默认账号；专业版不限。主进程任务门禁用。 */
+  canUseAccount(accountId: string): boolean {
+    if (this.isPro()) return true
+    return accountId === FREE_DEFAULT_ACCOUNT_ID
+  }
+
+  accountDeniedMessage(): string {
+    return LICENSE_ACCOUNT_DENIED
+  }
+
   status(): LicenseStatus {
     this.load()
-    const pro = this.isPro()
+    return this.statusFromState()
+  }
+
+  private statusFromState(): LicenseStatus {
+    const pro = (() => {
+      if (!this.tokenMatches(this.state)) return false
+      if (!this.clockIntegrityOk(this.state)) return false
+      if (!this.offlineGraceOk(this.state)) return false
+      if (this.isExpired(this.state)) return false
+      return true
+    })()
     return {
       isPro: pro,
       expiresAt: this.state.expires_at,
@@ -266,6 +381,234 @@ export class LicenseService {
       machineId: this.machineFingerprint(),
       maxAccounts: pro ? Number.POSITIVE_INFINITY : 1,
     }
+  }
+
+  private statusKey(status: LicenseStatus) {
+    return `${status.isPro ? 1 : 0}|${status.expiresAt}`
+  }
+
+  /** 降为免费版时主动拆掉多余账号会话（不信任前端 converge） */
+  private enforceFreeTierSessions() {
+    if (this.isPro()) return
+    for (const accountId of [...this.sessionIds()]) {
+      if (accountId !== FREE_DEFAULT_ACCOUNT_ID) {
+        logger.info(`免费版：关闭多余账号会话 ${accountId}`)
+        accountManager.closeSession(accountId)
+      }
+    }
+  }
+
+  private sessionIds(): string[] {
+    return [...accountManager.accountSessions.keys()]
+  }
+
+  private noteSuccessfulSync() {
+    this.monoMsWithoutSync = 0
+    this.wallFreezeSuspectedFlag = false
+    this.lastPerfNow = performance.now()
+    this.lastWallNow = Date.now()
+  }
+
+  /** 用进程单调时间检测「墙钟被冻住/大幅滞后」 */
+  private updateWallFreezeDetector() {
+    const perf = performance.now()
+    const wall = Date.now()
+    if (this.lastPerfNow > 0 && this.lastWallNow > 0) {
+      const monoDelta = perf - this.lastPerfNow
+      const wallDelta = wall - this.lastWallNow
+      if (monoDelta >= WALL_FREEZE_MONO_MS && wallDelta < monoDelta * 0.5) {
+        this.wallFreezeSuspectedFlag = true
+        logger.warn('检测到系统时间停滞或异常滞后（相对进程时间）')
+      }
+    }
+    this.lastPerfNow = perf
+    this.lastWallNow = wall
+  }
+
+  private tickMonotonicOffline() {
+    this.monoMsWithoutSync += LOCAL_FALLBACK_MS
+    this.updateWallFreezeDetector()
+  }
+
+  /**
+   * 拨表/缺锚定/墙钟冻结：立刻按非 Pro 推送，并强制联网恢复。
+   * 联网失败则保持降级，直到时间恢复且校验成功。
+   */
+  private async recoverFromClockAnomaly() {
+    if (this.clockRecoverInFlight) return
+    this.clockRecoverInFlight = true
+    try {
+      const status = this.statusFromState()
+      this.publishStatus(status, CLOCK_ANOMALY_HINT, true)
+      this.armLocalTimers()
+      const result = await this.heartbeat()
+      if (!result.status.isPro) {
+        this.publishStatus(
+          result.status,
+          result.warning || CLOCK_ANOMALY_HINT,
+          true,
+        )
+      }
+    } finally {
+      this.clockRecoverInFlight = false
+    }
+  }
+
+  private demoteForOfflineMonotonic() {
+    if (!this.state.token && !this.state.expires_at) return
+    logger.warn('单调时钟离线超时，强制降级')
+    this.save({
+      ...this.state,
+      token: '',
+    })
+    const status = this.statusFromState()
+    this.publishStatus(status, OFFLINE_MONOTONIC_HINT, true)
+    this.armLocalTimers()
+  }
+
+  /**
+   * 推送状态给渲染进程。force 时即使未变化也推（例如带 warning）。
+   */
+  private publishStatus(status: LicenseStatus, warning?: string, force = false) {
+    const key = this.statusKey(status)
+    if (!force && key === this.lastEmittedKey && warning === undefined) return
+    const prevPro = this.lastEmittedKey.startsWith('1|')
+    this.lastEmittedKey = key
+    let tip = warning
+    if (tip === undefined && prevPro && !status.isPro) {
+      tip = EXPIRED_RUNTIME_HINT
+    }
+    if (!status.isPro) {
+      this.enforceFreeTierSessions()
+    }
+    windowManager.send(IPC_CHANNELS.license.changed, {
+      status,
+      warning: tip,
+    })
+  }
+
+  private clearLocalTimers() {
+    if (this.expireTimer) {
+      clearTimeout(this.expireTimer)
+      this.expireTimer = null
+    }
+    if (this.fallbackTimer) {
+      clearInterval(this.fallbackTimer)
+      this.fallbackTimer = null
+    }
+  }
+
+  private armLocalTimers() {
+    this.clearLocalTimers()
+    if (!this.watchStarted) return
+
+    const status = this.statusFromState()
+    const exp = parseLocal(this.state.expires_at)
+    if (exp) {
+      const delay = exp.getTime() - Date.now()
+      if (delay > 0) {
+        this.expireTimer = setTimeout(
+          () => this.recheckLocal(),
+          Math.min(delay + 500, MAX_TIMEOUT_MS),
+        )
+      }
+    }
+
+    // 有授权票或专业版：每分钟复检 + 单调离线计时（防冻住系统时间）
+    if (status.isPro || this.state.token) {
+      this.fallbackTimer = setInterval(() => this.recheckLocal({ tick: true }), LOCAL_FALLBACK_MS)
+    }
+  }
+
+  /** 本地即时复检：到期、凭证失效、时钟异常时推送前端 */
+  recheckLocal(opts?: { tick?: boolean }): LicenseStatus {
+    this.load()
+    if (opts?.tick) {
+      this.tickMonotonicOffline()
+    } else {
+      this.updateWallFreezeDetector()
+    }
+
+    if (this.state.token) {
+      const graceDays = Math.max(0, Math.min(this.config().offline_grace_days, 2))
+      if (this.monoMsWithoutSync > graceDays * 86400000) {
+        this.demoteForOfflineMonotonic()
+        return this.statusFromState()
+      }
+    }
+
+    if (this.state.token && !this.clockIntegrityOk(this.state)) {
+      void this.recoverFromClockAnomaly()
+      return this.statusFromState()
+    }
+
+    const status = this.statusFromState()
+    this.publishStatus(status)
+    this.armLocalTimers()
+    return status
+  }
+
+  private armHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+    if (!this.watchStarted) return
+    this.heartbeatTimer = setInterval(() => {
+      void this.heartbeat()
+    }, HEARTBEAT_MS)
+  }
+
+  /** 低频联网校验（吊销 / 服务端改期 / 刷新凭证） */
+  async heartbeat(): Promise<{ status: LicenseStatus; warning?: string }> {
+    if (this.heartbeatInFlight) {
+      return { status: this.statusFromState() }
+    }
+    this.heartbeatInFlight = true
+    try {
+      const result = await this.syncOnStartup({ fromHeartbeat: true })
+      return result
+    } finally {
+      this.heartbeatInFlight = false
+    }
+  }
+
+  /**
+   * 启动运行中监视：到期定时 + 1 分钟兜底 + 6 小时心跳。
+   * 幂等，可在启动同步后调用。
+   */
+  startRuntimeWatch() {
+    if (this.watchStarted) {
+      this.recheckLocal()
+      return
+    }
+    this.watchStarted = true
+    this.load()
+    this.lastPerfNow = performance.now()
+    this.lastWallNow = Date.now()
+    const status = this.statusFromState()
+    this.lastEmittedKey = this.statusKey(status)
+    if (this.state.token && !this.clockIntegrityOk(this.state)) {
+      void this.recoverFromClockAnomaly()
+    }
+    this.armLocalTimers()
+    this.armHeartbeat()
+    logger.info('已启动授权运行中监视（本地到期 + 低频心跳 + 时钟完整性）')
+  }
+
+  stopRuntimeWatch() {
+    this.watchStarted = false
+    this.clearLocalTimers()
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+  }
+
+  /** 休眠恢复：本地立刻复检，并补一次联网心跳 */
+  async onSystemResume() {
+    this.recheckLocal()
+    await this.heartbeat()
   }
 
   private resolveRedeemUrl(): string {
@@ -434,7 +777,10 @@ export class LicenseService {
         return { ok: false, message: '核销成功但未返回授权凭证，请升级服务端后重试', status: this.status() }
       }
       newToken = this.makeDemoToken(newExpires, mid)
-    } else if (newToken.startsWith('v2.') && !this.verifyV2Token(newToken, mid)) {
+    } else if (
+      newToken.startsWith('v2.') &&
+      !this.verifyV2Token(newToken, mid, { expectExpiresLocal: newExpires })
+    ) {
       return { ok: false, message: '授权凭证无效', status: this.status() }
     }
 
@@ -454,14 +800,23 @@ export class LicenseService {
       last_validate_at: serverTime ? localNow : this.state.last_validate_at,
     })
 
-    return { ok: true, message: `${tip}。到期时间：${newExpires}`, status: this.status() }
+    const status = this.statusFromState()
+    if (serverTime) this.noteSuccessfulSync()
+    this.publishStatus(status, undefined, true)
+    this.armLocalTimers()
+    return { ok: true, message: `${tip}。到期时间：${newExpires}`, status }
   }
 
-  async syncOnStartup(): Promise<{ status: LicenseStatus; warning?: string }> {
+  async syncOnStartup(opts?: {
+    fromHeartbeat?: boolean
+  }): Promise<{ status: LicenseStatus; warning?: string }> {
     this.load()
     const url = this.validateUrl()
     if (!url) {
-      return { status: this.status() }
+      const status = this.statusFromState()
+      this.publishStatus(status)
+      this.armLocalTimers()
+      return { status }
     }
     try {
       const mid = this.machineFingerprint()
@@ -477,7 +832,12 @@ export class LicenseService {
           clock_server_at: serverTime || this.state.clock_server_at,
           clock_local_at: serverTime ? localNow : this.state.clock_local_at,
         })
-        return { status: this.status(), warning: '授权已被吊销，请联系发卡方' }
+        if (serverTime) this.noteSuccessfulSync()
+        const status = this.statusFromState()
+        const warning = '授权已被吊销，请联系发卡方'
+        this.publishStatus(status, warning, true)
+        this.armLocalTimers()
+        return { status, warning }
       }
 
       if (data.known === false && this.state.expires_at && this.state.token) {
@@ -489,7 +849,12 @@ export class LicenseService {
           clock_server_at: serverTime || this.state.clock_server_at,
           clock_local_at: serverTime ? localNow : this.state.clock_local_at,
         })
-        return { status: this.status(), warning: '服务端无此机器授权记录，请重新激活卡密' }
+        if (serverTime) this.noteSuccessfulSync()
+        const status = this.statusFromState()
+        const warning = '服务端无此机器授权记录，请重新激活卡密'
+        this.publishStatus(status, warning, true)
+        this.armLocalTimers()
+        return { status, warning }
       }
 
       let next = { ...this.state }
@@ -503,11 +868,36 @@ export class LicenseService {
       if (data.known && serverExp) {
         const localExp = serverExpiresToLocal(serverExp)
         if (localExp) {
-          if (licenseToken.startsWith('v2.') && !this.verifyV2Token(licenseToken, mid)) {
-            return { status: this.status(), warning: '服务端凭证无效' }
-          }
-          if (!licenseToken) {
-            return { status: this.status(), warning: '服务端未返回授权凭证' }
+          const tokenOk =
+            licenseToken.startsWith('v2.') &&
+            this.verifyV2Token(licenseToken, mid, {
+              nowMs: parseServerTime(serverTime)?.getTime() ?? Date.now(),
+              expectExpiresLocal: localExp,
+            })
+
+          // 服务端已过期、未发票或验签失败：强制写回服务端到期并清空凭证，杜绝本地篡改续命
+          if (data.expired || !licenseToken || !tokenOk) {
+            if (!licenseToken) {
+              logger.warn('授权同步：服务端未返回 license_token，强制按服务端到期降级')
+            } else if (data.expired) {
+              logger.info('授权同步：服务端已过期，强制降级')
+            } else {
+              logger.warn('授权同步：服务端 license_token 验签失败，强制降级')
+            }
+            this.save({
+              ...next,
+              expires_at: localExp,
+              token: '',
+              machine_id: mid,
+            })
+            if (serverTime) this.noteSuccessfulSync()
+            const status = this.statusFromState()
+            const warning = data.expired
+              ? '授权已过期，免费版仅支持 1 个账号；请到设置页续充卡密'
+              : '授权校验未通过，请点击刷新重试；仍失败请重新激活卡密'
+            this.publishStatus(status, warning, true)
+            this.armLocalTimers()
+            return { status, warning }
           }
           next = {
             ...next,
@@ -518,13 +908,29 @@ export class LicenseService {
         }
       }
       this.save(next)
-      if (!this.isPro()) {
-        return { status: this.status(), warning: '授权无效或已过期，免费版仅支持 1 个账号' }
+      if (serverTime) this.noteSuccessfulSync()
+      const status = this.statusFromState()
+      if (!status.isPro) {
+        // 从未激活过卡密的纯免费用户无需提示「已过期」
+        const hadLicense = Boolean(this.state.expires_at) || Boolean(data.known)
+        const warning = hadLicense
+          ? '授权无效或已过期，免费版仅支持 1 个账号'
+          : undefined
+        this.publishStatus(status, warning, Boolean(warning))
+        this.armLocalTimers()
+        return { status, warning }
       }
-      return { status: this.status() }
+      this.publishStatus(status)
+      this.armLocalTimers()
+      return { status }
     } catch (err) {
-      logger.warn('启动授权同步失败（可离线宽限）', err)
-      return { status: this.status(), warning: this.isPro() ? undefined : '授权校验网络异常' }
+      const label = opts?.fromHeartbeat ? '授权心跳失败' : '启动授权同步失败（可离线宽限）'
+      logger.warn(label, err)
+      const status = this.statusFromState()
+      const warning = status.isPro ? undefined : '授权校验网络异常'
+      this.publishStatus(status, warning)
+      this.armLocalTimers()
+      return { status, warning }
     }
   }
 }

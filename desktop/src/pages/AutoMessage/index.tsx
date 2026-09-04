@@ -1,9 +1,7 @@
 import { useMemoizedFn } from 'ahooks'
-import { useState } from 'react'
 import { TaskButton } from '@/components/common/TaskButton'
 import { TaskRestartHint } from '@/components/common/TaskRestartHint'
 import { Title } from '@/components/common/Title'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useAutoMessageActions, useCurrentAutoMessage } from '@/hooks/useAutoMessage'
 import { useTaskControl } from '@/hooks/useTaskControl'
 import MessageListCard from './components/MessageListCard'
@@ -21,13 +19,12 @@ const useAutoMessageTaskControl = () => {
     getConfig: () => config,
     setIsRunning,
     startSuccessMessage: '自动发言任务已启动',
-    startFailureMessage: '自动发言任务启动失败',
+    startFailureMessage: '自动发言启动失败。请确认已连接直播控制台后重试',
   })
 }
 
 export default function AutoMessage() {
   const { isRunning, onStartTask, onStopTask } = useAutoMessageTaskControl()
-  const [validationError] = useState<string | null>(null)
 
   const handleTaskButtonClick = useMemoizedFn(() => {
     if (!isRunning) onStartTask()
@@ -42,12 +39,6 @@ export default function AutoMessage() {
       </div>
 
       <TaskRestartHint visible={isRunning} />
-
-      {validationError && (
-        <Alert variant="destructive">
-          <AlertDescription>{validationError}</AlertDescription>
-        </Alert>
-      )}
 
       <div className="grid gap-6">
         <MessageListCard />

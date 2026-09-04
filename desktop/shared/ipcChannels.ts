@@ -48,6 +48,11 @@ export const IPC_CHANNELS = {
     setPath: 'chrome:setPath',
     selectPath: 'chrome:selectPath',
     saveState: 'chrome:saveState',
+    clearState: 'chrome:clearState',
+  },
+  secure: {
+    encrypt: 'secure:encrypt',
+    decrypt: 'secure:decrypt',
   },
   updater: {
     checkUpdate: 'updater:checkUpdate',
@@ -65,6 +70,8 @@ export const IPC_CHANNELS = {
     status: 'license:status',
     activate: 'license:activate',
     sync: 'license:sync',
+    /** 主进程运行中复检后推送（到期 / 心跳） */
+    changed: 'license:changed',
   },
   log: 'log',
   app: {

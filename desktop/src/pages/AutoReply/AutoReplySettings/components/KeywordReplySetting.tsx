@@ -8,11 +8,11 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { useAutoReplyConfig } from '@/hooks/useAutoReplyConfig'
 import { useToast } from '@/hooks/useToast'
-
-interface Rule {
-  keywords: string[]
-  contents: string[]
-}
+import {
+  type KeywordRule as Rule,
+  parseKeywordBatchText,
+  serializeKeywordRules,
+} from '@/utils/keywordRules'
 
 export function KeywordReplySetting() {
   const { config, updateKeywordRules, updateKeywordReplyEnabled } = useAutoReplyConfig()
@@ -270,13 +270,7 @@ function CommonKeywordManager({
 }
 
 function KeywordReplyEditor({ rules, onSave }: { rules: Rule[]; onSave: (rules: Rule[]) => void }) {
-  const toLocalText = useCallback((rules: Rule[]): string => {
-    return rules
-      .map(rule => {
-        return `${rule.keywords.join('/')}|${rule.contents.join('|')}`
-      })
-      .join('\n')
-  }, [])
+  const toLocalText = useCallback((rules: Rule[]): string => serializeKeywordRules(rules), [])
 
   const { toast } = useToast()
   const [localText, setLocalText] = useState(toLocalText(rules))
@@ -285,34 +279,10 @@ function KeywordReplyEditor({ rules, onSave }: { rules: Rule[]; onSave: (rules: 
   const lines = useMemo(() => localText.split('\n'), [localText])
   const hasChanges = localText !== savedText
 
-  const toRules = (lines: string[]): Rule[] => {
-    const rules = lines.map((line, index) => {
-      const items = line.split('|')
-      if (items.length < 2) {
-        throw new Error(`第 ${index + 1} 行错误：请至少提供一个关键词和一条回复内容`)
-      }
-      const keywords = items[0].split('/').map(s => s.trim())
-      const emptyKeywordIndex = keywords.findIndex(kw => kw.length === 0)
-      if (emptyKeywordIndex >= 0) {
-        throw new Error(`第 ${index + 1} 行错误：第 ${emptyKeywordIndex + 1} 个关键词是空的`)
-      }
-      const contents = items.slice(1).map(s => s.trim())
-      const emptyContentIndex = contents.findIndex(con => con.length === 0)
-      if (emptyContentIndex >= 0) {
-        throw new Error(`第 ${index + 1} 行错误：第 ${emptyContentIndex + 1} 条回复内容是空的`)
-      }
-      return {
-        keywords,
-        contents,
-      }
-    })
-    return rules
-  }
-
   const handleSaveBtnClick = () => {
     try {
-      const rules = toRules(lines)
-      onSave(rules)
+      const next = parseKeywordBatchText(localText)
+      onSave(next)
       setSavedText(localText)
       toast.success('保存成功')
     } catch (e) {

@@ -133,7 +133,7 @@ export class AIChatService {
       }
     }
 
-    this.logger.success('API Key 通过测试！你的 API Key 大概率是有效的')
+    this.logger.success('API 密钥测试通过，可以正常使用')
   }
 
   private async checkDefaultAPIKey(): Promise<CheckAPIKeyResult> {

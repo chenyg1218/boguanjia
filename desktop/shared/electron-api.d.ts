@@ -7,11 +7,12 @@ export interface IpcChannels {
   [IPC_CHANNELS.tasks.liveControl.connect]: (params: {
     chromePath?: string
     headless?: boolean
+    /** @deprecated 登录态已改由主进程加密存储；仅作旧版 localStorage 一次性迁移 */
     storageState?: string
     platform: LiveControlPlatform
     account: Account
-  }) => boolean
-  [IPC_CHANNELS.tasks.liveControl.disconnect]: (accountId: string) => boolean
+  }) => TaskIpcResult
+  [IPC_CHANNELS.tasks.liveControl.disconnect]: (accountId: string) => TaskIpcResult
   [IPC_CHANNELS.tasks.liveControl.disconnectedEvent]: (id: string) => void
   [IPC_CHANNELS.tasks.liveControl.notifyAccountName]: (
     params:
@@ -24,21 +25,27 @@ export interface IpcChannels {
   ) => void
 
   // AutoMessage
-  [IPC_CHANNELS.tasks.autoMessage.start]: (accountId: string, config: AutoCommentConfig) => boolean
+  [IPC_CHANNELS.tasks.autoMessage.start]: (
+    accountId: string,
+    config: AutoCommentConfig,
+  ) => TaskIpcResult
   [IPC_CHANNELS.tasks.autoMessage.stop]: (accountId: string) => boolean
   [IPC_CHANNELS.tasks.autoMessage.stoppedEvent]: (id: string) => void
   [IPC_CHANNELS.tasks.autoMessage.sendBatchMessages]: (
     accountId: string,
     messages: string[],
     count: number,
-  ) => boolean
+  ) => TaskIpcResult
   [IPC_CHANNELS.tasks.autoMessage.updateConfig]: (
     accountId: string,
     config: Parital<AutoCommentConfig>,
   ) => void
 
   // AutoPopup
-  [IPC_CHANNELS.tasks.autoPopUp.start]: (accountId: string, config: AutoPopupConfig) => boolean
+  [IPC_CHANNELS.tasks.autoPopUp.start]: (
+    accountId: string,
+    config: AutoPopupConfig,
+  ) => TaskIpcResult
   [IPC_CHANNELS.tasks.autoPopUp.stop]: (accountId: string) => boolean
   [IPC_CHANNELS.tasks.autoPopUp.stoppedEvent]: (id: string) => void
   [IPC_CHANNELS.tasks.autoPopUp.updateConfig]: (
@@ -55,7 +62,7 @@ export interface IpcChannels {
   [IPC_CHANNELS.tasks.autoReply.startCommentListener]: (
     accountId: string,
     config: CommentListenerConfig,
-  ) => boolean
+  ) => TaskIpcResult
   [IPC_CHANNELS.tasks.autoReply.stopCommentListener]: (accountId: string) => void
   [IPC_CHANNELS.tasks.autoReply.sendReply]: (accountId: string, replyContent: string) => void
   [IPC_CHANNELS.tasks.autoReply.listenerStopped]: (accountId: string) => void
@@ -109,7 +116,13 @@ export interface IpcChannels {
   [IPC_CHANNELS.chrome.selectPath]: () => string | null
   [IPC_CHANNELS.chrome.getPath]: (edge?: boolean) => string | null
   [IPC_CHANNELS.chrome.setPath]: (path: string) => void
-  [IPC_CHANNELS.chrome.saveState]: (accountId: string, state: string) => void
+  /** 登录成功通知；正文已加密保存在主进程，不再下发明文 */
+  [IPC_CHANNELS.chrome.saveState]: (accountId: string) => void
+  [IPC_CHANNELS.chrome.clearState]: (accountId: string) => void
+
+  // Secure (safeStorage)
+  [IPC_CHANNELS.secure.encrypt]: (plain: string) => string | null
+  [IPC_CHANNELS.secure.decrypt]: (cipherBase64: string) => string | null
 
   // App
   [IPC_CHANNELS.app.openLogFolder]: () => void
@@ -153,6 +166,16 @@ export interface IpcChannels {
     }
     warning?: string
   }
+  [IPC_CHANNELS.license.changed]: (payload: {
+    status: {
+      isPro: boolean
+      expiresAt: string
+      announcement: string
+      machineId: string
+      maxAccounts: number
+    }
+    warning?: string
+  }) => void
 
   // Log
   [IPC_CHANNELS.log]: (message: LogMessage) => void

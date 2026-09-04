@@ -4,7 +4,9 @@ import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import { AUTO_REPLY } from '@/constants'
+import { replaceUsername } from '@/utils/autoReplyText'
 import { EVENTS, eventEmitter } from '@/utils/events'
+import { matchKeywordRule } from '@/utils/keywordRules'
 import { useAccounts } from './useAccounts'
 import type { ChatMessage } from './useAIChat'
 import { type AIProvider, useAIProvider } from './useAIProvider'
@@ -193,18 +195,9 @@ async function sendMessage(
     await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.autoReply.sendReply, accountId, content)
     return true
   } catch (err) {
-    errorHandler(err, '自动发送回复失败')
+    errorHandler(err, '自动发送回复失败，请检查中控台连接与评论框')
     return false
   }
-}
-
-function replaceUsername(content: string, username: string, mask: boolean) {
-  if (!content) return ''
-  // 把 {用户名} 替换为 username
-  const displayedUsername = mask
-    ? `${String.fromCodePoint(username.codePointAt(0) ?? 42 /* 42 是星号 */)}***`
-    : username
-  return content.replace(new RegExp(AUTO_REPLY.USERNAME_PLACEHOLDER, 'g'), displayedUsername)
 }
 
 /**
@@ -221,9 +214,7 @@ const handleKeywordReply = (
     return false
   }
 
-  const rule = config.comment.keywordReply.rules.find(({ keywords }) =>
-    keywords.some(kw => comment.content?.includes(kw)),
-  )
+  const rule = matchKeywordRule(comment.content, config.comment.keywordReply.rules)
 
   if (rule && rule.contents.length > 0) {
     const content = getRandomElement(rule.contents)
@@ -303,7 +294,7 @@ const handleAIReply = async (
       }
     }
   } catch (err) {
-    errorHandler(err, 'AI 生成回复失败')
+    errorHandler(err, 'AI 生成回复失败，请检查 API 密钥与网络')
   }
 }
 

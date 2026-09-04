@@ -58,7 +58,7 @@ export function LicenseSetting() {
         toast.error(result.message)
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '激活失败')
+      toast.error(err instanceof Error ? err.message : '激活失败，请检查卡密与网络后重试')
     } finally {
       setBusy(false)
     }
@@ -74,13 +74,21 @@ export function LicenseSetting() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2 text-sm">
-          <div className="rounded-lg border p-3 space-y-1.5">
+          <div
+            className={`rounded-lg border p-3 space-y-1.5 ${
+              status.isPro ? '' : 'border-primary/30 bg-primary/5'
+            }`}
+          >
             <div className="font-medium">免费版</div>
             <p className="text-muted-foreground leading-relaxed">
               永久免费，可登录 <span className="text-foreground font-medium">1 个</span> 账号，适合单店试用。
             </p>
           </div>
-          <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-1.5">
+          <div
+            className={`rounded-lg border p-3 space-y-1.5 ${
+              status.isPro ? 'border-primary/30 bg-primary/5' : ''
+            }`}
+          >
             <div className="font-medium">专业版</div>
             <p className="text-muted-foreground leading-relaxed">
               购买卡密开通后，可同时管理 <span className="text-foreground font-medium">多个</span> 账号，每个账号独立配置、独立跑任务。

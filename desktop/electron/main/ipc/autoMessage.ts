@@ -2,23 +2,24 @@ import { Result } from '@praha/byethrow'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { createLogger } from '#/logger'
 import { accountManager } from '#/managers/AccountManager'
-import { typedIpcMainHandle } from '#/utils'
+import { assertAccountLicensed } from '#/services/licenseGate'
+import { toTaskResult, typedIpcMainHandle } from '#/utils'
 
 const TASK_NAME = '自动发言'
 const TASK_TYPE = 'auto-comment'
 
-// IPC 处理程序
 function setupIpcHandlers() {
   typedIpcMainHandle(IPC_CHANNELS.tasks.autoMessage.start, async (_, accountId, config) => {
-    return Result.pipe(
-      accountManager.getSession(accountId),
+    const result = await Result.pipe(
+      assertAccountLicensed(accountId),
+      Result.andThen(() => accountManager.getSession(accountId)),
       Result.andThen(accountSession => accountSession.startTask({ type: TASK_TYPE, config })),
       Result.inspectError(error => {
         const logger = createLogger(`@${accountManager.getAccountName(accountId)}`).scope(TASK_NAME)
         logger.error('启动任务失败：', error)
       }),
-      r => r.then(Result.isSuccess),
     )
+    return toTaskResult(result)
   })
 
   typedIpcMainHandle(IPC_CHANNELS.tasks.autoMessage.stop, async (_, accountId) => {
@@ -36,8 +37,9 @@ function setupIpcHandlers() {
   typedIpcMainHandle(
     IPC_CHANNELS.tasks.autoMessage.sendBatchMessages,
     async (_, accountId, messages, count) => {
-      return Result.pipe(
-        accountManager.getSession(accountId),
+      const result = await Result.pipe(
+        assertAccountLicensed(accountId),
+        Result.andThen(() => accountManager.getSession(accountId)),
         Result.andThen(accountSession =>
           accountSession.startTask({ type: 'send-batch-messages', config: { messages, count } }),
         ),
@@ -47,8 +49,8 @@ function setupIpcHandlers() {
           )
           logger.error('启动任务失败：', error)
         }),
-        r => r.then(Result.isSuccess),
       )
+      return toTaskResult(result)
     },
   )
 

@@ -12,6 +12,9 @@ import {
 import { abortableSleep, sleep } from '#/utils'
 import type { IElementFinder } from './IElementFinder'
 
+/** 判断是否已在中控台 / 是否跳到登录页的等待上限 */
+const CONNECT_PROBE_TIMEOUT_MS = 90_000
+
 export async function connect(
   page: Page,
   loginConstants: {
@@ -23,15 +26,21 @@ export async function connect(
   await page.goto(loginConstants.liveControlUrl, {
     waitUntil: 'domcontentloaded',
   })
-  await Promise.race([
-    page.waitForURL(loginConstants.loginUrlRegex, {
-      timeout: 0,
-      waitUntil: 'domcontentloaded',
-    }),
-    page.waitForSelector(loginConstants.isInLiveControlSelector, {
-      timeout: 0,
-    }),
-  ])
+  try {
+    await Promise.race([
+      page.waitForURL(loginConstants.loginUrlRegex, {
+        timeout: CONNECT_PROBE_TIMEOUT_MS,
+        waitUntil: 'domcontentloaded',
+      }),
+      page.waitForSelector(loginConstants.isInLiveControlSelector, {
+        timeout: CONNECT_PROBE_TIMEOUT_MS,
+      }),
+    ])
+  } catch {
+    throw new Error(
+      '打开中控台超时：页面未进入登录页或直播控制台。请检查网络，或关闭无头模式后重试',
+    )
+  }
 
   const isConnected = !loginConstants.loginUrlRegex.test(page.url())
   return isConnected
@@ -236,7 +245,7 @@ export async function toggleButton(
   if (tryCount > TOGGLE_BUTTON_MAX_TRY_COUNT) {
     return Result.fail(
       new MaxTryCountExceededError({
-        taskName: 'toggleButton',
+        taskName: '切换讲解按钮',
         maxTryCount: TOGGLE_BUTTON_MAX_TRY_COUNT,
       }),
     )

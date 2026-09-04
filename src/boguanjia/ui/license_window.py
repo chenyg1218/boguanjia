@@ -38,7 +38,11 @@ class _RedeemWorker(QObject):
             ok, msg, state = auth.activate_or_renew(self._card, self._account)
             self.finished.emit(ok, msg, state)
         except Exception as exc:  # noqa: BLE001 — 展示给用户
-            self.finished.emit(False, f"激活异常：{exc}", self._account)
+            self.finished.emit(
+                False,
+                f"激活异常，请检查网络后重试：{exc}",
+                self._account,
+            )
 
 
 class LicenseWindow(QDialog):

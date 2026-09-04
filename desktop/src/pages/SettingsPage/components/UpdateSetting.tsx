@@ -25,7 +25,7 @@ export function UpdateSetting() {
     <Card id="update-section">
       <CardHeader>
         <CardTitle>软件更新</CardTitle>
-        <CardDescription>检查并安装最新版本的应用程序</CardDescription>
+        <CardDescription>检查并安装最新版本</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-4">

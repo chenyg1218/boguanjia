@@ -22,7 +22,7 @@ export default function ChatInput({
 
   const handleSubmit = useMemoizedFn(async () => {
     if (!apiKeys[config.provider]) {
-      toast.error('请先配置 API Key')
+      toast.error('请先在设置中配置 API 密钥')
       return
     }
     if (!input.trim() || status !== 'ready') return

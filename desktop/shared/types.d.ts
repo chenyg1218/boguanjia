@@ -1,7 +1,12 @@
 declare type Account = {
   readonly id: string
   name: string
+  /** 免费版降级时禁用多余账号，配置保留；续费后自动恢复 */
+  disabled?: boolean
 }
+
+/** IPC 任务类调用统一结果 */
+declare type TaskIpcResult = { ok: true } | { ok: false; error: string }
 
 declare interface ProviderInfo {
   name: string

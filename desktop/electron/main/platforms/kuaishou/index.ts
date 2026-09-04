@@ -46,12 +46,17 @@ export class KuaishouPlatform
   }
 
   async login(browserSession: BrowserSession): Promise<void> {
+    const LOGIN_TIMEOUT_MS = 5 * 60 * 1000
     if (!REGEXPS.LOGIN_PAGE.test(browserSession.page.url())) {
       await browserSession.page.goto(URLS.LOGIN_PAGE)
     }
-    await browserSession.page.waitForSelector(SELECTORS.LOGGED_IN, {
-      timeout: 0,
-    })
+    try {
+      await browserSession.page.waitForSelector(SELECTORS.LOGGED_IN, {
+        timeout: LOGIN_TIMEOUT_MS,
+      })
+    } catch {
+      throw new Error('登录超时（5 分钟内未完成扫码）。请关闭无头模式后重新连接并完成扫码')
+    }
   }
 
   async getAccountName(session: BrowserSession): Promise<string> {
@@ -60,7 +65,7 @@ export class KuaishouPlatform
   }
 
   disconnect(): Promise<void> {
-    throw new Error('Method not implemented.')
+    throw new Error('断开连接功能暂未实现，请等待后续版本')
   }
 
   async performComment(message: string, pinTop?: boolean) {
@@ -146,7 +151,7 @@ export class KuaishouPlatform
   }
   getCommentListenerPage(): Page {
     if (!this.commentListener) {
-      throw new Error('Comment listener not started')
+      throw new Error('评论监听未启动。请先点击「开始监听」')
     }
     return this.commentListener.getPage()
   }

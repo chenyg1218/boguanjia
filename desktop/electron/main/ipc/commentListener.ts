@@ -2,7 +2,8 @@ import { Result } from '@praha/byethrow'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { createLogger } from '#/logger'
 import { accountManager } from '#/managers/AccountManager'
-import { typedIpcMainHandle } from '#/utils'
+import { assertAccountLicensed } from '#/services/licenseGate'
+import { toTaskResult, typedIpcMainHandle } from '#/utils'
 
 const TASK_NAME = '监听评论'
 const TASK_TYPE = 'comment-listener'
@@ -11,8 +12,9 @@ function setupIpcHandlers() {
   typedIpcMainHandle(
     IPC_CHANNELS.tasks.autoReply.startCommentListener,
     async (_, accountId: string, config: CommentListenerConfig) => {
-      return Result.pipe(
-        accountManager.getSession(accountId),
+      const result = await Result.pipe(
+        assertAccountLicensed(accountId),
+        Result.andThen(() => accountManager.getSession(accountId)),
         Result.andThen(accountSession =>
           accountSession.startTask({ type: TASK_TYPE, config: config }),
         ),
@@ -22,8 +24,8 @@ function setupIpcHandlers() {
           )
           logger.error('启动评论监听失败：', error)
         }),
-        r => r.then(Result.isSuccess),
       )
+      return toTaskResult(result)
     },
   )
 
@@ -45,7 +47,8 @@ function setupIpcHandlers() {
 
   typedIpcMainHandle(IPC_CHANNELS.tasks.autoReply.sendReply, async (_, accountId, message) => {
     await Result.pipe(
-      accountManager.getSession(accountId),
+      assertAccountLicensed(accountId),
+      Result.andThen(() => accountManager.getSession(accountId)),
       Result.andThen(accountSession =>
         accountSession.startTask({
           type: 'send-batch-messages',

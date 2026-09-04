@@ -96,7 +96,7 @@ async function timeoutFetch(url: string | URL, timeout = 5000) {
     return response
   } catch (err) {
     if ((err as Error).name === 'AbortError') {
-      throw new Error('Fetch timeout')
+      throw new Error('获取更新超时，请检查网络或更换更新源后重试')
     }
     throw err
   }
@@ -279,9 +279,14 @@ class WindowsUpdater implements Updater {
     })
 
     this.autoUpdater.on('error', (error: Error) => {
-      logger.error('更新出错: ', error.message)
+      const message = /timeout|超时|ETIMEDOUT|Fetch timeout/i.test(error.message)
+        ? '检查更新超时，请检查网络或更换更新源后重试'
+        : /ENOTFOUND|ECONNREFUSED|net::/i.test(error.message)
+          ? '无法连接更新服务器，请检查网络后重试'
+          : `更新失败：${error.message.split('\n')[0]}。请稍后重试或更换更新源`
+      logger.error('更新出错：', error)
       windowManager.send(IPC_CHANNELS.updater.updateError, {
-        message: error.message,
+        message,
         error,
       })
     })

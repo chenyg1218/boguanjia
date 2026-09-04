@@ -1,12 +1,8 @@
+import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { immer } from 'zustand/middleware/immer'
 import { EVENTS, eventEmitter } from '@/utils/events'
-
-interface Account {
-  id: string
-  name: string
-}
 
 interface AccountsStore {
   accounts: Account[]
@@ -16,6 +12,8 @@ interface AccountsStore {
   switchAccount: (id: string) => void
   getCurrentAccount: () => Account | undefined
   updateAccountName: (id: string, name: string) => void
+  setAccountDisabled: (id: string, disabled: boolean) => void
+  enableAllAccounts: () => void
 }
 
 export const useAccounts = create<AccountsStore>()(
@@ -46,6 +44,7 @@ export const useAccounts = create<AccountsStore>()(
           }
           eventEmitter.emit(EVENTS.ACCOUNT_REMOVED, id)
         })
+        void window.ipcRenderer.invoke(IPC_CHANNELS.chrome.clearState, id).catch(() => {})
       },
 
       switchAccount: (id: string) => {
@@ -64,13 +63,47 @@ export const useAccounts = create<AccountsStore>()(
           const account = state.accounts.find(acc => acc.id === id)
           if (account) {
             account.name = name
-            // eventEmitter.emit(EVENTS.ACCOUNT_UPDATED, id, name)
+          }
+        })
+      },
+
+      setAccountDisabled: (id, disabled) => {
+        set(state => {
+          if (id === 'default') return
+          const account = state.accounts.find(acc => acc.id === id)
+          if (account) {
+            account.disabled = disabled
+          }
+        })
+      },
+
+      enableAllAccounts: () => {
+        set(state => {
+          for (const account of state.accounts) {
+            if (account.disabled) {
+              account.disabled = false
+            }
           }
         })
       },
     })),
     {
       name: 'accounts-storage',
+      version: 1,
+      migrate: (persistedState, version) => {
+        if (version === 0 || version === undefined) {
+          const state = persistedState as { accounts?: Account[]; currentAccountId?: string }
+          return {
+            accounts: (state.accounts ?? []).map(a => ({
+              id: a.id,
+              name: a.name,
+              disabled: a.disabled,
+            })),
+            currentAccountId: state.currentAccountId ?? 'default',
+          }
+        }
+        return persistedState as { accounts: Account[]; currentAccountId: string }
+      },
     },
   ),
 )

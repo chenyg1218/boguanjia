@@ -8,7 +8,7 @@ export class WebSocketService {
   private logger: ReturnType<typeof createLogger>
 
   constructor() {
-    this.logger = createLogger('WebSocket服务')
+    this.logger = createLogger('评论推送服务')
   }
 
   start(port: number) {
@@ -18,13 +18,16 @@ export class WebSocketService {
         _port = DEFAULT_PORT
       }
       if (this.wss) {
-        this.logger.warn('WebSocket服务已在运行')
+        this.logger.warn('评论推送服务已在运行')
         return resolve()
       }
       const server = new WebSocketServer({ port: _port })
 
       const startErrorHandler = (err: Error) => {
-        this.logger.error('WebSocket服务启动失败', err)
+        this.logger.error(
+          '评论推送服务启动失败。请检查端口是否被占用，或更换端口后重试',
+          err,
+        )
         this.wss = null
         server.close()
         reject(err)
@@ -32,14 +35,14 @@ export class WebSocketService {
       // 如果端口被占用会报错
       server.once('error', startErrorHandler)
       server.once('listening', () => {
-        this.logger.success(`WebSocket服务已启动，端口: ${_port}`)
+        this.logger.success(`评论推送服务已启动，端口：${_port}`)
         server.off('error', startErrorHandler)
         resolve()
       })
       server.on('connection', ws => {
-        this.logger.info('客户端已连接')
+        this.logger.info('推送客户端已连接')
         ws.on('close', () => {
-          this.logger.info('客户端已断开')
+          this.logger.info('推送客户端已断开')
         })
       })
       this.wss = server
@@ -61,7 +64,7 @@ export class WebSocketService {
     if (this.wss) {
       this.wss.close()
       this.wss = null
-      this.logger.info('WebSocket服务已停止', reason)
+      this.logger.info('评论推送服务已停止', reason)
     }
   }
 }

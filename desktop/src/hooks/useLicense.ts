@@ -1,6 +1,9 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
+import { LICENSE_EXPIRED_HINT } from '@/constants/copy'
+import { useIpcListener } from './useIpc'
+import { useToast } from './useToast'
 
 export interface LicenseStatus {
   isPro: boolean
@@ -16,6 +19,7 @@ interface LicenseStore {
   ready: boolean
   refresh: () => Promise<void>
   activate: (card: string) => Promise<{ ok: boolean; message: string }>
+  applyRemote: (payload: { status: LicenseStatus; warning?: string }) => void
 }
 
 const defaultStatus: LicenseStatus = {
@@ -27,10 +31,18 @@ const defaultStatus: LicenseStatus = {
   maxAccounts: 1,
 }
 
-export const useLicense = create<LicenseStore>((set, get) => ({
+export const useLicense = create<LicenseStore>(set => ({
   status: defaultStatus,
   warning: undefined,
   ready: false,
+
+  applyRemote: payload => {
+    set({
+      status: payload.status,
+      warning: payload.warning,
+      ready: true,
+    })
+  },
 
   refresh: async () => {
     try {
@@ -69,7 +81,19 @@ export const useLicense = create<LicenseStore>((set, get) => ({
 
 export function useLicenseBootstrap() {
   const refresh = useLicense(s => s.refresh)
+  const applyRemote = useLicense(s => s.applyRemote)
+  const { toast } = useToast()
+
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useIpcListener(IPC_CHANNELS.license.changed, (_event, payload) => {
+    const prevPro = useLicense.getState().status.isPro
+    applyRemote(payload)
+    // 运行中从专业版掉到免费版时提示（Guard 会处理多余账号）
+    if (prevPro && !payload.status.isPro) {
+      toast.error(payload.warning || LICENSE_EXPIRED_HINT)
+    }
+  })
 }

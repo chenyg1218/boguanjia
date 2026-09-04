@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
+import { DISABLED_ACCOUNT_HINT, TASK_TYPE_LABEL } from '@/constants/copy'
 import { useAccounts } from './useAccounts'
 import { useToast } from './useToast'
 
@@ -27,16 +28,12 @@ interface UseTaskControlParams<T extends TaskType> {
   setIsRunning: (running: boolean) => void
   /** 任务启动成功提示消息 */
   startSuccessMessage?: string
-  /** 任务启动失败提示消息 */
+  /** 任务启动失败提示消息（主进程无具体原因时的回落） */
   startFailureMessage?: string
 }
 
 /**
- * 通用的任务控制 Hook
- * 用于统一管理任务的启动和停止逻辑
- *
- * @param params - 任务控制参数
- * @returns 任务控制相关的状态和方法
+ * 通用的任务控制 Hook：统一启动/停止与错误提示
  */
 export function useTaskControl<T extends TaskType>(params: UseTaskControlParams<T>) {
   const {
@@ -50,14 +47,18 @@ export function useTaskControl<T extends TaskType>(params: UseTaskControlParams<
 
   const { toast } = useToast()
   const accountId = useAccounts(store => store.currentAccountId)
+  const account = useAccounts(store => store.accounts.find(a => a.id === accountId))
+  const label = TASK_TYPE_LABEL[taskType] ?? '任务'
 
-  /**
-   * 启动任务
-   */
   const onStartTask = useCallback(async () => {
+    if (account?.disabled) {
+      toast.error(DISABLED_ACCOUNT_HINT)
+      return
+    }
+
     const config = getConfig()
 
-    let result: boolean
+    let result: TaskIpcResult
     if (taskType === 'auto-comment') {
       result = await window.ipcRenderer.invoke(
         IPC_CHANNELS.tasks.autoMessage.start,
@@ -72,14 +73,19 @@ export function useTaskControl<T extends TaskType>(params: UseTaskControlParams<
       )
     }
 
-    if (result) {
+    if (result.ok) {
       setIsRunning(true)
-      toast.success(startSuccessMessage || `${taskType} 任务已启动`)
+      toast.success(startSuccessMessage || `${label}已启动`)
     } else {
       setIsRunning(false)
-      toast.error(startFailureMessage || `${taskType} 任务启动失败`)
+      toast.error(
+        result.error ||
+          startFailureMessage ||
+          `${label}启动失败。请确认已连接直播控制台后重试`,
+      )
     }
   }, [
+    account?.disabled,
     getConfig,
     setIsRunning,
     toast,
@@ -87,11 +93,9 @@ export function useTaskControl<T extends TaskType>(params: UseTaskControlParams<
     startSuccessMessage,
     startFailureMessage,
     taskType,
+    label,
   ])
 
-  /**
-   * 停止任务
-   */
   const onStopTask = useCallback(async () => {
     if (taskType === 'auto-comment') {
       await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.autoMessage.stop, accountId)

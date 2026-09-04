@@ -6,6 +6,7 @@ import { setupBrowserIpcHandlers } from './browser'
 import { setupAutoReplyIpcHandlers } from './commentListener'
 import { setupLiveControlIpcHandlers } from './connection'
 import { setupLicenseIpcHandlers } from './license'
+import { setupSecureIpcHandlers } from './secure'
 import { setupUpdateIpcHandlers } from './update'
 
 setupLiveControlIpcHandlers()
@@ -17,3 +18,4 @@ setupBrowserIpcHandlers()
 setupAppIpcHandlers()
 setupUpdateIpcHandlers()
 setupLicenseIpcHandlers()
+setupSecureIpcHandlers()

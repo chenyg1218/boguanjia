@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useAutoMessageActions, useCurrentAutoMessage } from '@/hooks/useAutoMessage'
 import { useCurrentLiveControl } from '@/hooks/useLiveControl'
+import { useToast } from '@/hooks/useToast'
 
 export function MessageOneKey() {
   const [isRunning, setIsRunning] = useState(false)
@@ -15,18 +16,34 @@ export function MessageOneKey() {
   const messages = useCurrentAutoMessage(ctx => ctx.config.messages)
   const isConnected = useCurrentLiveControl(ctx => ctx.isConnected)
   const accountId = useAccounts(s => s.currentAccountId)
+  const { toast } = useToast()
 
   const mappedMessages = useMemo(() => messages.map(msg => msg.content), [messages])
 
   const handleClick = async () => {
     setIsRunning(true)
-    await window.ipcRenderer.invoke(
-      IPC_CHANNELS.tasks.autoMessage.sendBatchMessages,
-      accountId,
-      mappedMessages,
-      batchCount,
-    )
-    setIsRunning(false)
+    try {
+      const result = await window.ipcRenderer.invoke(
+        IPC_CHANNELS.tasks.autoMessage.sendBatchMessages,
+        accountId,
+        mappedMessages,
+        batchCount,
+      )
+      if (!result.ok) {
+        toast.error(
+          result.error ||
+            '一键刷屏失败。请确认已连接直播控制台且评论框可用，或稍后再试',
+        )
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : '一键刷屏失败。请确认已连接直播控制台后重试',
+      )
+    } finally {
+      setIsRunning(false)
+    }
   }
 
   return (

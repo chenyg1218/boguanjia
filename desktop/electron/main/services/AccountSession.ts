@@ -15,6 +15,7 @@ import {
   isPerformComment,
   isPerformPopup,
 } from '#/platforms/IPlatform'
+import { sessionStateStore } from '#/services/SessionStateStore'
 import { createAutoCommentTask } from '#/tasks/AutoCommentTask'
 import { createAutoPopupTask } from '#/tasks/AutoPopupTask'
 import { createCommentListenerTask } from '#/tasks/CommentListenerTask'
@@ -36,9 +37,14 @@ export class AccountSession {
   }
 
   async connect(config: { headless?: boolean; storageState?: string }) {
-    let storageState: StorageState
-    if (config.storageState) {
-      this.logger.info('检测到已保存登录状态')
+    let storageState: StorageState | undefined
+
+    const fromDisk = sessionStateStore.load(this.account.id)
+    if (fromDisk) {
+      this.logger.info('已恢复上次登录状态')
+      storageState = JSON.parse(fromDisk)
+    } else if (config.storageState) {
+      this.logger.info('正在迁移旧版登录状态')
       storageState = JSON.parse(config.storageState)
     }
 
@@ -46,13 +52,9 @@ export class AccountSession {
 
     await this.ensureAuthenticated(this.browserSession, config.headless)
 
-    const state = JSON.stringify(await this.browserSession.context.storageState())
-
-    // 登录成功之后马上先保存一次登录状态，确保后续发生意外后不用重新登录
-    windowManager.send(IPC_CHANNELS.chrome.saveState, this.account.id, state)
+    await this.persistStorageState()
 
     // 此时可以确保正在中控台页面，获取用户名
-    // 获取用户名不应该和连接中控台的行为冲突
     this.platform
       .getAccountName(this.browserSession)
       .then(accountName => {
@@ -69,10 +71,6 @@ export class AccountSession {
         })
       })
 
-    // 浏览器被外部主动关闭时，程序自动断开所有操作
-    // 不用 browserContext close 或 browser disconnected 的原因：
-    // Windows 手动关闭浏览器时（点击右上角的x或标签页的x）无法触发相应事件
-    // 只会触发 page close，所以没办法
     this.browserSession.page.on('close', () => {
       emitter.emit('page-closed', { accountId: this.account.id })
     })
@@ -81,33 +79,33 @@ export class AccountSession {
 
   disconnect() {
     this.logger.warn('与中控台断开连接')
-    // 通过程序关闭浏览器（并非多余的操作，因为 MacOS 的 context 关闭时不会关闭浏览器进程）
     this.browserSession?.browser.close().catch(e => this.logger.error('无法关闭浏览器：', e))
-    // 关闭所有正在进行的任务
     Array.from(this.activeTasks.values()).forEach(task => {
       task.stop()
     })
     this.activeTasks.clear()
-    // 通知渲染层
     windowManager.send(IPC_CHANNELS.tasks.liveControl.disconnectedEvent, this.account.id)
+  }
+
+  private async persistStorageState() {
+    if (!this.browserSession) return
+    const state = JSON.stringify(await this.browserSession.context.storageState())
+    sessionStateStore.save(this.account.id, state)
+    windowManager.send(IPC_CHANNELS.chrome.saveState, this.account.id)
   }
 
   private async ensureAuthenticated(session: BrowserSession, headless = true) {
     this.browserSession = session
     const isConnected = await this.platform.connect(this.browserSession)
-    // 未登录，需要等待登录
     if (!isConnected) {
-      // 无头模式，需要先关闭原先的无头模式，启用有头模式给用户登录
       if (headless) {
         await this.browserSession.browser.close()
-        this.logger.info('需要登录，请在打开的浏览器中登录')
+        this.logger.info('需要登录，请在打开的浏览器中扫码（约 5 分钟内完成）')
         this.browserSession = await browserManager.createSession(false)
       }
-      // 等待登录
       await this.platform.login(this.browserSession)
-      // 保存登录状态
       const storageState = await this.browserSession.context.storageState()
-      // 无头模式，需要先关闭当前的有头模式，重新打开无头模式
+      sessionStateStore.save(this.account.id, JSON.stringify(storageState))
       if (headless) {
         await this.browserSession.browser.close()
         this.logger.info('登录成功，浏览器将继续以无头模式运行')
@@ -122,7 +120,6 @@ export class AccountSession {
     if (Result.isFailure(newTask)) {
       return newTask
     }
-    // 任务停止时从任务列表中移除
     newTask.value.addStopListener(() => {
       this.activeTasks.delete(task.type)
     })

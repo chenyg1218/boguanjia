@@ -12,31 +12,47 @@ function cleanStack(stack?: string) {
   return stack.replace(cleanPathRegex, `APP:${path.sep}`)
 }
 
-function formatLogData(data: FormatParams['data'], _level: FormatParams['level']) {
-  function errorMessage(item: Error) {
-    return `${item.message}\n${cleanStack(item.stack)}${item.cause ? `\nCaused by: ${item.cause}` : ''}`
-  }
-  return data.map(item => (item instanceof Error ? errorMessage(item) : item)).join(' ')
+/** 文件日志：保留完整堆栈，便于排查 */
+function formatFileLogData(data: FormatParams['data']) {
+  return data
+    .map(item => {
+      if (item instanceof Error) {
+        return `${item.message}\n${cleanStack(item.stack)}${item.cause ? `\nCaused by: ${item.cause}` : ''}`
+      }
+      return item
+    })
+    .join(' ')
+}
+
+/** 运行日志（给用户看）：只保留首行中文摘要，不带堆栈 */
+function formatUserLogData(data: FormatParams['data']) {
+  return data
+    .map(item => {
+      if (item instanceof Error) {
+        return item.message.split('\n')[0]
+      }
+      return String(item).split('\n')[0]
+    })
+    .join(' ')
 }
 
 // [2025-02-11 07:30:03.037] [中控台] » INFO         启动中……
 electronLog.transports.console.format = ({ data, level, message }) => {
-  // TODO: error 有可能是：message + Error 的形式，如果带有 Error，要记录堆栈信息
-  const text = formatLogData(data, level)
-  // 不放 hooks 里了，这样少一次 format 计算
+  const userText = formatUserLogData(data)
+  // 推给前端运行日志：不含堆栈
   if (level !== 'verbose' && level !== 'debug') {
-    windowManager.send(IPC_CHANNELS.log, { ...message, data: [text] })
+    windowManager.send(IPC_CHANNELS.log, { ...message, data: [userText] })
   }
   return [
     `[${message.date.toLocaleString()}]`,
     message.scope ? `[${message.scope}]` : '',
     '»',
     `${level.toUpperCase()}`,
-    `\t${text}`,
+    `\t${userText}`,
   ]
 }
 electronLog.transports.file.format = ({ data, level, message }) => {
-  const text = formatLogData(data, level)
+  const text = formatFileLogData(data)
   return [
     `[${message.date.toISOString().replace('T', ' ').slice(0, -1)}]`,
     `[${level.toUpperCase()}]`,

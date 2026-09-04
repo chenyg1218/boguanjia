@@ -2,6 +2,7 @@ import { EraserIcon, FolderSearchIcon, SearchIcon } from 'lucide-react'
 import { useId, useState } from 'react'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { SimpleIconsGooglechrome, SimpleIconsMicrosoftedge } from '@/components/icons/simpleIcons'
+import { useAccounts } from '@/hooks/useAccounts'
 import { useCurrentChromeConfig, useCurrentChromeConfigActions } from '@/hooks/useChromeConfig'
 import { useToast } from '@/hooks/useToast'
 import {
@@ -31,13 +32,19 @@ import { Switch } from '../../../components/ui/switch'
 export function BrowserSetting() {
   const path = useCurrentChromeConfig(context => context.path)
   const { setPath, setStorageState } = useCurrentChromeConfigActions()
+  const accountId = useAccounts(s => s.currentAccountId)
   const [isDetecting, setIsDetecting] = useState(false)
   const [edgeFirst, setEdgeFirst] = useState(false)
   const { toast } = useToast()
 
-  const handleCookiesReset = () => {
+  const handleCookiesReset = async () => {
     setStorageState('')
-    toast.success('登录状态已重置')
+    try {
+      await window.ipcRenderer.invoke(IPC_CHANNELS.chrome.clearState, accountId)
+    } catch {
+      /* 主进程清理失败时仍提示已重置本地状态 */
+    }
+    toast.success('登录状态已重置，下次连接需重新扫码')
   }
 
   const handleSelectChrome = async () => {
@@ -46,10 +53,10 @@ export function BrowserSetting() {
       if (path) {
         setPath(path)
 
-        toast.success('Chrome 路径设置成功')
+        toast.success('浏览器路径设置成功')
       }
     } catch {
-      toast.error('选择 Chrome 路径失败')
+      toast.error('未能选择路径，请重试')
     }
   }
 
@@ -60,12 +67,12 @@ export function BrowserSetting() {
       if (result) {
         setPath(result)
 
-        toast.success('已自动检测到路径')
+        toast.success('已自动检测到浏览器路径')
       } else {
-        toast.error('未检测到 Chrome，请确保 Chrome 已打开')
+        toast.error('未检测到 Chrome/Edge，请先打开浏览器，或手动选择安装路径')
       }
     } catch {
-      toast.error('检测 Chrome 路径失败')
+      toast.error('自动检测失败，请手动选择浏览器安装路径')
     } finally {
       setIsDetecting(false)
     }

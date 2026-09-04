@@ -67,22 +67,22 @@ export class ProviderService {
       try {
         const response = await fetch(url, { signal: AbortSignal.timeout(10_000) })
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status} ${response.statusText}`)
+          throw new Error(`拉取服务商列表失败（状态码 ${response.status}），将使用本地缓存`)
         }
         const data: Record<string, ProviderInfo> = await response.json()
         this._providers = { ...defaultProviders, ...data }
         await fs.writeFile(this.cachePath, JSON.stringify(this._providers, null, 2), 'utf-8')
         emitter.emit('providers-updated', this._providers)
-        this.logger.success(`已从 CDN 更新 providers: ${url}`)
+        this.logger.success('已从网络更新 AI 服务商列表')
         return
       } catch (error) {
         errors.push({ url, error })
-        this.logger.warn(`CDN 源获取失败: ${url}`, error)
+        this.logger.warn('网络源获取服务商列表失败，尝试下一个', error)
       }
     }
 
     this.logger.error(
-      `所有 CDN 源均获取失败 (${errors.length}/${PROVIDER_URLS.length})，将使用本地数据`,
+      `所有网络源均获取失败（${errors.length}/${PROVIDER_URLS.length}），将使用本地服务商列表`,
     )
   }
 }

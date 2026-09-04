@@ -1,14 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useAutoMessageStore } from '@/hooks/useAutoMessage'
 import { useAutoPopUpStore } from '@/hooks/useAutoPopUp'
@@ -18,14 +9,16 @@ import { useLiveControlStore } from '@/hooks/useLiveControl'
 import { useToast } from '@/hooks/useToast'
 
 /**
- * 专业版过期 / 未激活时：若本地账号多于 1 个，提示并收敛到默认账号。
+ * 专业版过期 / 未激活时：自动禁用多余账号（保留配置与登录态），续费后自动恢复。
+ * 主进程会同步拆掉多余会话；此处负责前端状态与软禁用。
  */
 export function LicenseAccountGuard() {
   const ready = useLicense(s => s.ready)
   const isPro = useLicense(s => s.status.isPro)
   const accounts = useAccounts(s => s.accounts)
   const currentAccountId = useAccounts(s => s.currentAccountId)
-  const removeAccount = useAccounts(s => s.removeAccount)
+  const setAccountDisabled = useAccounts(s => s.setAccountDisabled)
+  const enableAllAccounts = useAccounts(s => s.enableAllAccounts)
   const switchAccount = useAccounts(s => s.switchAccount)
   const setMessageRunning = useAutoMessageStore(s => s.setIsRunning)
   const setPopupRunning = useAutoPopUpStore(s => s.setIsRunning)
@@ -33,89 +26,81 @@ export function LicenseAccountGuard() {
   const setListening = useAutoReplyStore(s => s.setIsListening)
   const setConnected = useLiveControlStore(s => s.setIsConnected)
   const { toast } = useToast()
-  const [open, setOpen] = useState(false)
+  const convergingRef = useRef(false)
   const handledRef = useRef(false)
 
-  const extras = accounts.filter(a => a.id !== 'default')
-  const needConverge = ready && !isPro && extras.length > 0
+  const activeExtras = accounts.filter(a => a.id !== 'default' && !a.disabled)
+  const needConverge = ready && !isPro && activeExtras.length > 0
+  const extraIdsKey = activeExtras.map(a => a.id).join(',')
 
   useEffect(() => {
-    if (!needConverge) {
+    if (ready && isPro) {
+      enableAllAccounts()
       handledRef.current = false
-      setOpen(false)
-      return
+      convergingRef.current = false
     }
-    if (!handledRef.current) {
-      setOpen(true)
-    }
-  }, [needConverge])
+  }, [ready, isPro, enableAllAccounts])
 
-  const converge = async () => {
+  useEffect(() => {
+    if (!needConverge || handledRef.current || convergingRef.current) return
+
+    const extras = accounts.filter(a => a.id !== 'default' && !a.disabled)
+    if (extras.length === 0) return
+
+    convergingRef.current = true
     handledRef.current = true
-    setOpen(false)
 
-    for (const acc of extras) {
-      try {
-        await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.autoMessage.stop, acc.id)
-      } catch {
-        /* ignore */
+    void (async () => {
+      for (const acc of extras) {
+        try {
+          await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.autoMessage.stop, acc.id)
+        } catch {
+          /* ignore */
+        }
+        try {
+          await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.autoPopUp.stop, acc.id)
+        } catch {
+          /* ignore */
+        }
+        try {
+          await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.autoReply.stopCommentListener, acc.id)
+        } catch {
+          /* ignore */
+        }
+        try {
+          await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.liveControl.disconnect, acc.id)
+        } catch {
+          /* ignore */
+        }
+        setMessageRunning(acc.id, false)
+        setPopupRunning(acc.id, false)
+        setReplyRunning(acc.id, false)
+        setListening(acc.id, 'stopped')
+        setConnected(acc.id, 'disconnected')
+        setAccountDisabled(acc.id, true)
       }
-      try {
-        await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.autoPopUp.stop, acc.id)
-      } catch {
-        /* ignore */
-      }
-      try {
-        await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.autoReply.stopCommentListener, acc.id)
-      } catch {
-        /* ignore */
-      }
-      try {
-        await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.liveControl.disconnect, acc.id)
-      } catch {
-        /* ignore */
-      }
-      setMessageRunning(acc.id, false)
-      setPopupRunning(acc.id, false)
-      setReplyRunning(acc.id, false)
-      setListening(acc.id, 'stopped')
-      setConnected(acc.id, 'disconnected')
-      removeAccount(acc.id)
-    }
 
-    if (currentAccountId !== 'default') {
-      switchAccount('default')
-    }
+      if (currentAccountId !== 'default') {
+        switchAccount('default')
+      }
 
-    toast.success('已降为免费版：仅保留默认账号，多余账号配置已清除')
-  }
+      toast.success('已降为免费版：多余账号已自动禁用（配置与登录态保留），续费后自动恢复')
+      convergingRef.current = false
+    })()
+  }, [
+    needConverge,
+    extraIdsKey,
+    accounts,
+    currentAccountId,
+    setAccountDisabled,
+    setConnected,
+    setListening,
+    setMessageRunning,
+    setPopupRunning,
+    setReplyRunning,
+    switchAccount,
+    toast,
+  ])
 
-  return (
-    <AlertDialog open={open}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>专业版已失效</AlertDialogTitle>
-          <AlertDialogDescription asChild>
-            <div className="space-y-2 text-sm text-muted-foreground">
-              <p>
-                当前为免费版，仅支持 <strong>1 个账号</strong>
-                。检测到还有 {extras.length} 个多余账号：
-              </p>
-              <ul className="list-disc list-inside">
-                {extras.map(a => (
-                  <li key={a.id}>{a.name}</li>
-                ))}
-              </ul>
-              <p>
-                确认后将断开这些账号的中控台与任务，并删除其本地配置；默认账号可继续使用。续充卡密后可再次添加多个账号。
-              </p>
-            </div>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogAction onClick={() => void converge()}>仅保留默认账号</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  )
+  return null
 }

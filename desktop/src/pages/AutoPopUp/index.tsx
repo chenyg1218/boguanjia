@@ -19,7 +19,7 @@ const useAutoPopUpTaskControl = () => {
     getConfig: () => config,
     setIsRunning,
     startSuccessMessage: '自动弹窗任务已启动',
-    startFailureMessage: '自动弹窗任务启动失败',
+    startFailureMessage: '自动弹窗启动失败。请确认已连接直播控制台后重试',
   })
 }
 

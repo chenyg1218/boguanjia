@@ -32,6 +32,7 @@ export function createTask(
     isRunning = false
     if (err) {
       logger.error('任务因错误中断：', err)
+      logger.info('可尝试重新连接直播控制台后再次启动任务')
     } else {
       logger.info('任务已停止')
     }

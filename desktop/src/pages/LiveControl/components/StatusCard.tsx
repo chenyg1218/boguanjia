@@ -7,8 +7,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
+import { DISABLED_ACCOUNT_HINT } from '@/constants/copy'
 import { useAccounts } from '@/hooks/useAccounts'
-import { useCurrentChromeConfig, useCurrentChromeConfigActions } from '@/hooks/useChromeConfig'
+import {
+  useChromeConfigStore,
+  useCurrentChromeConfig,
+  useCurrentChromeConfigActions,
+} from '@/hooks/useChromeConfig'
 import { useCurrentLiveControl, useCurrentLiveControlActions } from '@/hooks/useLiveControl'
 import { useToast } from '@/hooks/useToast'
 
@@ -17,12 +22,8 @@ const StatusAlert = React.memo(() => (
     <CircleAlert className="h-4 w-4" />
     <AlertTitle>快手小店连接提示</AlertTitle>
     <AlertDescription>
-      <ol className="list-decimal list-inside">
-        <li>
-          首次登录请<strong>关闭无头模式</strong>，在弹出的浏览器中扫码
-        </li>
-        <li>登录成功后再开启自动发言 / 弹窗 / 回复；改配置后需停止任务再开始</li>
-      </ol>
+      <p>首次登录请<strong>关闭无头模式</strong>后扫码；</p>
+      <p>开播与后续步骤见下方使用说明</p>
     </AlertDescription>
   </Alert>
 ))
@@ -66,23 +67,31 @@ const ConnectToLiveControl = React.memo(() => {
   const connectLiveControl = useMemoizedFn(async () => {
     try {
       if (!account) {
-        toast.error('找不到对应账号')
+        toast.error('当前账号无效，请在右侧账号栏重新选择')
+        return
+      }
+      if (account.disabled) {
+        toast.error(DISABLED_ACCOUNT_HINT)
         return
       }
       setIsConnected('connecting')
+      // storageState 仅用于旧版 localStorage → 主进程加密存储的一次性迁移
       const result = await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.liveControl.connect, {
         headless,
         chromePath,
-        storageState,
+        storageState: storageState || undefined,
         platform: 'kuaishou',
         account,
       })
 
-      if (result) {
+      if (result.ok) {
         setIsConnected('connected')
+        if (storageState) {
+          useChromeConfigStore.getState().clearStorageState(account.id)
+        }
         toast.success('已连接到直播控制台')
       } else {
-        throw new Error('连接直播控制台失败')
+        throw new Error(result.error || '连接直播控制台失败')
       }
     } catch (error) {
       setIsConnected('disconnected')
@@ -92,14 +101,21 @@ const ConnectToLiveControl = React.memo(() => {
 
   const disconnectLiveControl = useMemoizedFn(async () => {
     if (!account) {
-      toast.error('找不到对应账号')
+      toast.error('当前账号无效，请在右侧账号栏重新选择')
       return
     }
     try {
-      await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.liveControl.disconnect, account.id)
+      const result = await window.ipcRenderer.invoke(
+        IPC_CHANNELS.tasks.liveControl.disconnect,
+        account.id,
+      )
+      if (result && typeof result === 'object' && 'ok' in result && !result.ok) {
+        toast.error(result.error || '断开连接失败，可重启应用后再试')
+        return
+      }
       toast.success('已断开连接')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '断开连接失败')
+      toast.error(error instanceof Error ? error.message : '断开连接失败，可重启应用后再试')
     } finally {
       setIsConnected('disconnected')
     }

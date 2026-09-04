@@ -558,8 +558,12 @@ def _http_error_message(code: int, data: Any, raw: str) -> str:
         if msg:
             return str(msg)
     if code == 403:
-        return "核销失败（HTTP 403，访问被拒绝）"
-    return f"核销失败（HTTP {code}）"
+        return "访问被拒绝，请检查卡密是否有效，或联系发卡方"
+    if code == 404:
+        return "核销接口不存在，请确认软件为最新版本或联系发卡方"
+    if code >= 500:
+        return f"核销服务暂时不可用（错误码 {code}），请稍后重试"
+    return f"核销失败，请稍后重试（错误码 {code}）"
 
 
 def _canonical_body_without_sig(payload: dict) -> bytes:

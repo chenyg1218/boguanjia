@@ -313,7 +313,7 @@ export function APIKeyDialog({ type = 'chat' }: APIKeyDialogProps) {
 
   const handleTestApiKey = useCallback(async () => {
     if (!tempKeys[tempConfig.provider]) {
-      toast.error('请先输入API Key')
+      toast.error('请先输入 API 密钥')
       return
     }
 
@@ -329,10 +329,10 @@ export function APIKeyDialog({ type = 'chat' }: APIKeyDialogProps) {
       if (result.success) {
         setTestSuccess(true)
       } else {
-        toast.error(result.error ?? '测试连接失败')
+        toast.error(result.error ?? '测试失败，请检查密钥与网络后重试')
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '未知错误')
+      toast.error(error instanceof Error ? error.message : '测试失败，请检查密钥与网络后重试')
     } finally {
       setTestLoading(false)
     }

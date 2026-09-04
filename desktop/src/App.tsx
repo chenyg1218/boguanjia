@@ -25,7 +25,6 @@ function useGlobalIpcListener() {
   const { setIsConnected, setAccountName } = useLiveControlStore()
   const setIsRunningAutoMessage = useAutoMessageStore(s => s.setIsRunning)
   const setIsRunningAutoPopUp = useAutoPopUpStore(s => s.setIsRunning)
-  const setStorageState = useChromeConfigStore(s => s.setStorageState)
   const enableAutoCheckUpdate = useUpdateConfigStore(s => s.enableAutoCheckUpdate)
   const handleUpdate = useUpdateStore.use.handleUpdate()
   const { toast } = useToast()
@@ -36,25 +35,33 @@ function useGlobalIpcListener() {
 
   useIpcListener(IPC_CHANNELS.tasks.liveControl.disconnectedEvent, id => {
     setIsConnected(id, 'disconnected')
-    toast.error('直播控制台已断开连接')
+    const name = useAccounts.getState().accounts.find(a => a.id === id)?.name
+    toast.error(
+      name
+        ? `「${name}」直播控制台已断开，可重新连接后继续`
+        : '直播控制台已断开，可重新连接后继续',
+    )
   })
 
   useIpcListener(IPC_CHANNELS.tasks.autoMessage.stoppedEvent, id => {
     setIsRunningAutoMessage(id, false)
-    toast.error('自动发言已停止')
+    const name = useAccounts.getState().accounts.find(a => a.id === id)?.name
+    toast.error(name ? `「${name}」自动发言已停止，可重新启动` : '自动发言已停止，可重新启动')
   })
 
   useIpcListener(IPC_CHANNELS.tasks.autoPopUp.stoppedEvent, id => {
     setIsRunningAutoPopUp(id, false)
-    toast.error('自动弹窗已停止')
+    const name = useAccounts.getState().accounts.find(a => a.id === id)?.name
+    toast.error(name ? `「${name}」自动弹窗已停止，可重新启动` : '自动弹窗已停止，可重新启动')
   })
 
   useIpcListener(IPC_CHANNELS.tasks.autoReply.listenerStopped, id => {
     setIsListening(id, 'stopped')
   })
 
-  useIpcListener(IPC_CHANNELS.chrome.saveState, (id, state) => {
-    setStorageState(id, state)
+  useIpcListener(IPC_CHANNELS.chrome.saveState, id => {
+    // 登录态已由主进程加密落盘；清空 renderer 中可能残留的明文
+    useChromeConfigStore.getState().clearStorageState(id)
   })
 
   useIpcListener(IPC_CHANNELS.tasks.liveControl.notifyAccountName, params => {

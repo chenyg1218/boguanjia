@@ -18,6 +18,24 @@ interface ParsedLog {
 
 const MAX_LOG_MESSAGES = 200 // 仅展示最近的 200 条日志
 
+/** 日志级别英文 → 中文（给普通用户看） */
+const LEVEL_LABEL: Record<string, string> = {
+  ERROR: '错误',
+  FATAL: '致命',
+  WARN: '警告',
+  WARNING: '警告',
+  INFO: '信息',
+  SUCCESS: '成功',
+  DEBUG: '调试',
+  NOTE: '备注',
+  VERBOSE: '详细',
+}
+
+function levelLabel(level: string): string {
+  const key = level.toUpperCase()
+  return LEVEL_LABEL[key] ?? level
+}
+
 export default function LogDisplayer() {
   const [logMessages, setLogMessages] = useState<ParsedLog[]>([])
   const [autoScroll, setAutoScroll] = useState(true)
@@ -37,12 +55,13 @@ export default function LogDisplayer() {
     if (!log.data || log.data.length === 0) {
       return null
     }
+    const rawLevel = typeof log.level === 'string' ? log.level.toUpperCase() : 'INFO'
     return {
       id: crypto.randomUUID(),
       timestamp: log.date.toLocaleString(),
-      module: log.scope ?? 'App',
-      level: typeof log.level === 'string' ? log.level.toUpperCase() : 'INFO',
-      // 只保留换行符之前的内容
+      module: log.scope ?? '应用',
+      level: rawLevel,
+      // 只保留换行符之前的内容（堆栈已在主进程剥离）
       message: log.data.map(String).join(' ').split('\n')[0],
     }
   }
@@ -131,6 +150,7 @@ function LogItem({ log, index }: { log: ParsedLog; index: number }) {
       case 'FATAL':
         return 'text-destructive font-bold'
       case 'WARN':
+      case 'WARNING':
         return 'text-warning font-medium'
       case 'DEBUG':
         return 'text-blue-600'
@@ -154,7 +174,7 @@ function LogItem({ log, index }: { log: ParsedLog; index: number }) {
     >
       <span className="text-muted-foreground shrink-0">[{log.timestamp}]</span>
       <span className="text-foreground/70 shrink-0">[{log.module}]</span>
-      <span className={cn('shrink-0', getLevelColor(log.level))}>{log.level}</span>
+      <span className={cn('shrink-0', getLevelColor(log.level))}>{levelLabel(log.level)}</span>
       <span className="text-foreground truncate">{log.message}</span>
     </div>
   )

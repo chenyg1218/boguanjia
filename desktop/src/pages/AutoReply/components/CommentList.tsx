@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
+import { CONNECT_LIVE_CONTROL_FIRST } from '@/constants/copy'
 import { useAccounts } from '@/hooks/useAccounts'
 import { type Message, useAutoReply } from '@/hooks/useAutoReply'
 import { useAutoReplyConfig } from '@/hooks/useAutoReplyConfig'
@@ -89,7 +90,7 @@ export default function CommentList({
   // 手动启动监听评论
   const startListening = async () => {
     if (isConnected !== 'connected') {
-      toast.error('请先连接直播间')
+      toast.error(CONNECT_LIVE_CONTROL_FIRST)
       return
     }
 
@@ -103,12 +104,16 @@ export default function CommentList({
           ws: config.ws?.enable ? { port: config.ws.port } : undefined,
         },
       )
-      if (!result) throw new Error('监听评论失败')
+      if (!result.ok) {
+        throw new Error(
+          result.error || '监听评论失败。请确认已连接直播控制台后重试',
+        )
+      }
       toast.success('监听评论成功')
       setIsListening('listening')
-    } catch (_error) {
+    } catch (error) {
       setIsListening('error')
-      toast.error('监听评论失败')
+      toast.error(error instanceof Error ? error.message : '监听评论失败，请查看运行日志后重试')
     }
   }
 
@@ -122,7 +127,7 @@ export default function CommentList({
       setIsListening('stopped')
       toast.success('已停止监听评论')
     } catch (_error) {
-      toast.error('停止监听评论失败')
+      toast.error('停止监听失败，请断开直播控制台后重试')
     }
   }
 
@@ -161,7 +166,7 @@ export default function CommentList({
               className="flex items-center gap-1"
               title={
                 isListening === 'waiting' || isConnected !== 'connected'
-                  ? '请先连接直播间'
+                  ? CONNECT_LIVE_CONTROL_FIRST
                   : undefined
               }
               disabled={isButtonDisabled}

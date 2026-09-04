@@ -21,6 +21,7 @@ interface ChromeConfigV2 {
 
 interface ChromeConfig {
   path: string
+  /** 仅作旧版一次性迁移；新版本登录态在主进程加密存储 */
   storageState: string
   headless: boolean
 }
@@ -30,6 +31,7 @@ interface ChromeConfigStore {
   setPath: (accountId: string, path: string) => void
   setStorageState: (accountId: string, storageState: string) => void
   setHeadless: (accountId: string, headless: boolean) => void
+  clearStorageState: (accountId: string) => void
 }
 
 const defaultContext = (): ChromeConfig => ({
@@ -69,6 +71,12 @@ export const useChromeConfigStore = create<ChromeConfigStore>()(
             context.storageState = storageState
           })
         },
+        clearStorageState: accountId => {
+          set(state => {
+            const context = ensureContext(state, accountId)
+            context.storageState = ''
+          })
+        },
         setHeadless: (accountId, headless) => {
           set(state => {
             const context = ensureContext(state, accountId)
@@ -79,7 +87,16 @@ export const useChromeConfigStore = create<ChromeConfigStore>()(
     }),
     {
       name: 'chrome-config',
-      version: 4,
+      version: 5,
+      // 登录态不再持久化到 localStorage
+      partialize: state => ({
+        contexts: Object.fromEntries(
+          Object.entries(state.contexts).map(([id, ctx]) => [
+            id,
+            { path: ctx.path, headless: ctx.headless, storageState: '' },
+          ]),
+        ),
+      }),
       migrate: (persistedState, version) => {
         if (version === 0) {
           const persisted = persistedState as ChromeConfigV1
@@ -88,6 +105,7 @@ export const useChromeConfigStore = create<ChromeConfigStore>()(
               default: {
                 path: persisted?.path,
                 storageState: '',
+                headless: false,
               },
             },
           }
@@ -103,6 +121,7 @@ export const useChromeConfigStore = create<ChromeConfigStore>()(
                 {
                   ...context,
                   storageState: '',
+                  headless: false,
                 },
               ]),
             ),
@@ -115,10 +134,29 @@ export const useChromeConfigStore = create<ChromeConfigStore>()(
               default: {
                 path: persisted?.path,
                 storageState: '',
+                headless: false,
               },
             },
           }
         }
+        // v4 → v5：保留 path/headless；storageState 留给首连时迁移到主进程后清空
+        if (version === 4) {
+          const persisted = persistedState as { contexts?: Record<string, ChromeConfig> }
+          return {
+            contexts: Object.fromEntries(
+              Object.entries(persisted.contexts ?? {}).map(([accountId, context]) => [
+                accountId,
+                {
+                  path: context?.path ?? '',
+                  headless: context?.headless ?? false,
+                  // 暂留明文供主进程迁移；partialize 之后不再写回
+                  storageState: context?.storageState ?? '',
+                },
+              ]),
+            ),
+          }
+        }
+        return persistedState as { contexts: Record<string, ChromeConfig> }
       },
     },
   ),

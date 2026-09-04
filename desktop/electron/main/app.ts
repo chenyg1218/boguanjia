@@ -2,7 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, shell } from 'electron'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { emitter } from './event/eventBus'
 import { updateManager } from './managers/UpdateManager'
@@ -149,11 +149,20 @@ app
       createLogger('授权').warn('启动授权同步失败', err)
     })
   })
+  .then(() => {
+    licenseService.startRuntimeWatch()
+    powerMonitor.on('resume', () => {
+      void licenseService.onSystemResume().catch(err => {
+        createLogger('授权').warn('休眠恢复后授权复检失败', err)
+      })
+    })
+  })
   .then(() => providerService.initialize())
   .then(createWindow)
 
 app.on('window-all-closed', async () => {
   win = null
+  licenseService.stopRuntimeWatch()
   accountManager.cleanup()
   if (process.platform !== 'darwin') app.quit()
 })

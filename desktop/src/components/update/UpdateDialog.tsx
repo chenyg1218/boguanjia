@@ -187,7 +187,7 @@ export function UpdateDialog() {
                   className="max-w-[400px]"
                 />
                 <p className="text-xs text-muted-foreground">
-                  请输入完整的URL地址，如：https://gh-proxy.com/
+                  请输入完整网址，例如：https://gh-proxy.com/
                 </p>
               </div>
             )}

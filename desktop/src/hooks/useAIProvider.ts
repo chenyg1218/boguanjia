@@ -1,8 +1,9 @@
 import cloneDeep from 'lodash-es/cloneDeep'
 import { providers } from 'shared/providers'
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import { immer } from 'zustand/middleware/immer'
+import { createEncryptedJsonStorage } from '@/utils/securePersist'
 
 export type AIProvider = string
 
@@ -100,11 +101,12 @@ export const useAIProviderStore = create<AIProviderStore>()(
     }),
     {
       name: 'ai-chat-storage',
+      storage: createJSONStorage(() => createEncryptedJsonStorage('ai-chat-storage')),
       partialize: state => ({
         chat: state.chat,
         autoReply: state.autoReply,
       }),
-      version: 1,
+      version: 2,
       migrate: (persistedState: unknown, version: number) => {
         // 从原先 useAIChat 旧版本迁移
         if (version === 0) {
@@ -115,6 +117,7 @@ export const useAIProviderStore = create<AIProviderStore>()(
           }
           return migratedState
         }
+        // v1 → v2：下次写入时由 encrypted storage 加密 apiKeys
         return persistedState
       },
     },

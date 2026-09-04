@@ -2,44 +2,37 @@ import { useCallback } from 'react'
 import { useToast } from './useToast'
 
 /**
- * 统一的错误处理 Hook
- * 用于在应用中统一处理错误，包括日志记录和用户提示
+ * 统一的错误处理 Hook：优先展示真实原因，再附带场景说明
  */
 export function useErrorHandler() {
   const { toast } = useToast()
 
   /**
-   * 处理错误
    * @param error - 错误对象或错误消息
-   * @param message - 可选的自定义错误提示消息
+   * @param context - 可选的场景说明（如「自动发送回复失败」），会与真实原因拼接
    */
   const handleError = useCallback(
-    (error: unknown, message?: string) => {
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      const displayMessage = message || errorMessage
+    (error: unknown, context?: string) => {
+      const reason = error instanceof Error ? error.message : String(error)
+      const displayMessage = context
+        ? reason
+          ? `${context}：${reason}`
+          : context
+        : reason || '操作失败，请查看运行日志后重试'
 
-      // 记录错误到控制台
       console.error('错误:', error)
-
-      // 显示错误提示给用户
       toast.error(displayMessage)
     },
     [toast],
   )
 
-  /**
-   * 异步操作包装器，自动处理错误
-   * @param asyncFn - 异步函数
-   * @param errorMessage - 可选的自定义错误提示消息
-   * @returns 包装后的异步函数
-   */
   const withErrorHandling = useCallback(
-    <T extends unknown[], R>(asyncFn: (...args: T) => Promise<R>, errorMessage?: string) => {
+    <T extends unknown[], R>(asyncFn: (...args: T) => Promise<R>, context?: string) => {
       return async (...args: T): Promise<R | undefined> => {
         try {
           return await asyncFn(...args)
         } catch (error) {
-          handleError(error as Error, errorMessage)
+          handleError(error as Error, context)
           return undefined
         }
       }

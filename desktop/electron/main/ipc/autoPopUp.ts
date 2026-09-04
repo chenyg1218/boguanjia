@@ -4,23 +4,24 @@ import { throttle } from 'lodash-es'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { createLogger } from '#/logger'
 import { accountManager } from '#/managers/AccountManager'
-import { typedIpcMainHandle } from '#/utils'
+import { assertAccountLicensed } from '#/services/licenseGate'
+import { toTaskResult, typedIpcMainHandle } from '#/utils'
 
 const TASK_NAME = '自动弹窗'
 const TASK_TYPE = 'auto-popup'
 
-// IPC 处理程序
 function setupIpcHandlers() {
   typedIpcMainHandle(IPC_CHANNELS.tasks.autoPopUp.start, async (_, accountId, config) => {
-    return await Result.pipe(
-      accountManager.getSession(accountId),
+    const result = await Result.pipe(
+      assertAccountLicensed(accountId),
+      Result.andThen(() => accountManager.getSession(accountId)),
       Result.andThen(accountSession => accountSession.startTask({ type: TASK_TYPE, config })),
       Result.inspectError(error => {
         const logger = createLogger(`@${accountManager.getAccountName(accountId)}`).scope(TASK_NAME)
         logger.error('启动任务失败：', error)
       }),
-      r => r.then(Result.isSuccess),
     )
+    return toTaskResult(result)
   })
 
   typedIpcMainHandle(IPC_CHANNELS.tasks.autoPopUp.stop, async (_, accountId) => {
@@ -53,11 +54,12 @@ function setupIpcHandlers() {
         throttle(
           () => {
             Result.pipe(
-              accountManager.getSession(accountId),
+              assertAccountLicensed(accountId),
+              Result.andThen(() => accountManager.getSession(accountId)),
               Result.andThen(accountSession =>
                 accountSession.updateTaskConfig(TASK_TYPE, {
                   goodsIds: sc.goodsIds,
-                  goodsItems: [], // 清空单品循环配置，保证快捷键正常执行
+                  goodsItems: [],
                 }),
               ),
               Result.inspect(_ => logger.info(`切换到商品组[${sc.goodsIds.join(',')}]`)),

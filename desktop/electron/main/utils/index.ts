@@ -1,4 +1,5 @@
 export * from './common'
+export * from './friendlyError'
 export * from './ipc'
 export * from './screenshot'
 export * from './types'
