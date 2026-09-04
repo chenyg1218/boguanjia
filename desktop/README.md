@@ -28,6 +28,15 @@ pnpm build
 
 产物在 `release/<version>/`。
 
+### Windows SmartScreen（「已保护你的电脑」）
+
+未签名的安装包会被 SmartScreen 拦截，用户需点「更多信息 → 仍要运行」。若要消除提示，需购买 **代码签名证书**（OV / EV）并在打包时签名，例如设置环境变量后由 electron-builder 自动签名：
+
+- `CSC_LINK`：证书文件路径（或 base64）
+- `CSC_KEY_PASSWORD`：证书密码
+
+也可使用 [Azure Trusted Signing](https://learn.microsoft.com/windows/security/application-security/application-control/app-control-for-business/design/trusted-signing)。签名后仍需一段时间积累下载信誉，EV 证书通常可更快通过。
+
 ## M0 / M1 能力
 
 | 模块 | 能力 |

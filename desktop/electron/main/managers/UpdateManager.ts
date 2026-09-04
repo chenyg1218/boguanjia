@@ -340,7 +340,7 @@ class WindowsUpdater implements Updater {
           windowManager.send(IPC_CHANNELS.updater.updateError, { message })
           return
         }
-        // 开发环境下的更新，要先启动 slow-server (pnpm slow-server)
+        // 开发环境下的更新调试入口（已禁用）
         // await this.autoUpdater.checkForUpdates()
         // return
       }

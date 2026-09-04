@@ -3,10 +3,10 @@ import { version } from './package.json'
 const config = {
   types: {
     feat: {
-      title: '🚀 Features',
+      title: '🚀 新功能',
     },
     fix: {
-      title: '🐞 Bug Fixes',
+      title: '🐞 问题修复',
     },
     refactor: false,
     docs: false,

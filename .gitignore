@@ -7,6 +7,7 @@ build/
 .pytest_cache/
 .venv/
 venv/
+.cursor/
 data/settings.json
 data/account.json
 data/account.dat

@@ -1,8 +1,9 @@
-# 开发用配置（正式发行包不会附带 license.json / selectors.json）
+# 旧 Python 客户端配置（已非产品入口）
 #
-# - license.json / selectors.json：仅开发态可读；打包后走
-#   src/boguanjia/resources/ 内置副本，用户改安装目录无效。
-# - default_settings.json：会打进发行包 config/，作为首次默认参数。
+# 当前主程序在 desktop/，卡密地址等已内置在 LicenseService，不依赖本目录。
+# 本目录仅保留给旧 PySide 客户端 / 协议对照参考：
 #
-# 修改选择器或授权文案时：请同步改
-#   src/boguanjia/resources/ 与本目录对应文件，再重新打包。
+# - license.json / selectors.json：旧开发态可读；旧打包走 src/boguanjia/resources/
+# - default_settings.json：旧发行包 config/ 的默认参数
+#
+# 正式产品请看：desktop/README.md、docs/用户教程.md

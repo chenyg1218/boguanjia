@@ -12,9 +12,9 @@
 - 数据：`/opt/jindou-license/data/cards.db`
 - 服务：`systemctl status jindou-license nginx`
 
-客户端授权与选择器已**内置**在程序中（`src/boguanjia/resources/`），发行包 `config/` 仅含 `default_settings.json`。用户修改安装目录旁的文件无法改核销地址或选择器。
+当前桌面端（`desktop/`）把核销地址与公告**写死在** `LicenseService` 内，用户无法通过改安装目录旁的配置文件绕过。协议与密钥仍与旧 Python 客户端对齐（见 `src/boguanjia/auth`、`license_crypto`）。
 
-开发态可读项目根 `config/license.json`（例如清空 `redeem_url` 走 DEMO）；打包后固定为：
+固定配置大致为：
 
 ```json
 {
