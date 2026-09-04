@@ -70,7 +70,11 @@ export default function Sidebar() {
     <aside className="flex w-64 min-w-[256px] flex-col border-r bg-background">
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mb-1 flex items-center gap-2.5">
-          <img src="/favicon.png" alt="播管家" className="h-8 w-8 rounded-lg" />
+          <img
+            src={`${import.meta.env.BASE_URL}favicon.png`}
+            alt="播管家"
+            className="h-8 w-8 rounded-lg"
+          />
           <h2 className="text-lg font-semibold">播管家</h2>
         </div>
         <p className="mb-6 text-xs text-muted-foreground">快手小店 · 功能列表</p>
