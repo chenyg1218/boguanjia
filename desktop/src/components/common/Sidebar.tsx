@@ -6,6 +6,7 @@ import { useAutoReply } from '@/hooks/useAutoReply'
 import { useLicense } from '@/hooks/useLicense'
 import { useCurrentLiveControl } from '@/hooks/useLiveControl'
 import { cn } from '@/lib/utils'
+import { formatMaxAccounts, planDisplayName } from 'shared/licensePlan'
 import {
   CarbonBlockStorage,
   CarbonChat,
@@ -77,7 +78,7 @@ export default function Sidebar() {
           />
           <h2 className="text-lg font-semibold">播管家</h2>
         </div>
-        <p className="mb-6 text-xs text-muted-foreground">快手小店 · 功能列表</p>
+        <p className="mb-6 text-xs text-muted-foreground">多平台跟播 · 功能列表</p>
         <nav className="space-y-2">
           {tabs.map(tab => (
             <NavLink
@@ -106,10 +107,10 @@ export default function Sidebar() {
         <div className="border-t p-4">
           <Link to="/settings#license" className="no-underline">
             <Badge variant={status.isPro ? 'default' : 'secondary'} className="cursor-pointer">
-              {status.isPro ? '专业版' : '免费版'}
+              {planDisplayName(status.plan)}
               {status.isPro && status.expiresAt
                 ? ` · ${status.expiresAt.slice(0, 10)}`
-                : ' · 1 账号'}
+                : ` · ${formatMaxAccounts(status.maxAccounts)}`}
             </Badge>
           </Link>
         </div>

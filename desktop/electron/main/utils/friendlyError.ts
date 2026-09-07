@@ -55,10 +55,10 @@ export function friendlyError(error: unknown, fallback = '操作失败，请查�
   if (/暂不支持任务|TaskNotImplemented|TaskNotSupported/i.test(msg)) {
     return `${msg}。请确认当前平台支持该功能`
   }
-  if (/免费版仅可用|请续费专业版|LicenseAccountDenied/i.test(msg)) {
-    return msg.includes('免费版')
-      ? msg
-      : '该账号已禁用（免费版仅可用默认账号），请续费专业版后使用，或切换到默认账号'
+  if (/基础版仅可用|免费版仅可用|请续费专业版|LicenseAccountDenied/i.test(msg)) {
+    return /基础版|免费版/.test(msg)
+      ? msg.replaceAll('免费版', '基础版')
+      : '该账号已禁用（基础版仅可用默认账号），请开通专业版或旗舰版后使用，或切换到默认账号'
   }
   if (/评论监听未启动|Comment listener/i.test(msg)) {
     return '评论监听未启动。请先点击「开始监听」'

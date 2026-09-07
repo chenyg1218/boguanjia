@@ -192,7 +192,7 @@ class UpdateManager {
     if (semver.lt(currentVersion, latestVersion)) {
       // 先用 log 提示更新
       logger.info(
-        `检查到可用更新：${currentVersion} -> ${latestVersion}，可前往应用设置-软件更新处手动更新`,
+        `检查到可用更新：${currentVersion} -> ${latestVersion}，将强制要求用户更新`,
       )
       const releaseNote = await fetchChangelog()
 

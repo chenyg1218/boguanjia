@@ -16,12 +16,42 @@ import { useCurrentLiveControl } from '@/hooks/useLiveControl'
 import { useToast } from '@/hooks/useToast'
 import { cn } from '@/lib/utils'
 
-const getMessageColor = (_type: Message['msg_type']) => {
-  return 'text-foreground'
+const getMessageColor = (type: Message['msg_type']) => {
+  switch (type) {
+    case 'room_enter':
+      return 'text-blue-500'
+    case 'room_like':
+      return 'text-pink-500'
+    case 'room_follow':
+      return 'text-purple-500'
+    case 'subscribe_merchant_brand_vip':
+      return 'text-amber-500'
+    case 'live_order':
+      return 'text-green-500'
+    case 'ecom_fansclub_participate':
+      return 'text-purple-500'
+    default:
+      return 'text-foreground'
+  }
 }
 
 const getMessageText = (message: Message) => {
-  return message.content
+  switch (message.msg_type) {
+    case 'room_enter':
+      return '进入直播间'
+    case 'room_like':
+      return '点赞了直播间'
+    case 'room_follow':
+      return '关注了直播间'
+    case 'subscribe_merchant_brand_vip':
+      return '加入了品牌会员'
+    case 'live_order':
+      return message.product_title
+    case 'ecom_fansclub_participate':
+      return '加入了粉丝团'
+    default:
+      return message.content
+  }
 }
 
 const MessageItem = memo(

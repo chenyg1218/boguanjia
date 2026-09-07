@@ -14,6 +14,10 @@ function setupIpcHandlers() {
   typedIpcMainHandle(IPC_CHANNELS.license.sync, async () => {
     return licenseService.syncOnStartup()
   })
+
+  typedIpcMainHandle(IPC_CHANNELS.license.syncAccounts, (_, accountIds) => {
+    return licenseService.syncLicensedAccounts(accountIds)
+  })
 }
 
 export function setupLicenseIpcHandlers() {

@@ -110,7 +110,7 @@ class AccountsPage(QWidget):
             self.btn_add.setToolTip("")
         else:
             self.hint.setText(
-                "免费版仅支持 1 个账号。激活卡密后可新增账号并同时多开工作台。"
+                "基础版仅支持 1 个账号。激活卡密后可新增账号并同时多开工作台。"
             )
             self.btn_add.setEnabled(True)  # 点击后引导升级
             self.btn_add.setToolTip("升级专业版后可新增")

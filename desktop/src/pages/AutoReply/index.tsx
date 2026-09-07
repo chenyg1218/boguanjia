@@ -27,7 +27,7 @@ export default function AutoReply() {
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <Title title="自动回复" description="查看快手直播间实时评论并自动回复" />
+            <Title title="自动回复" description="查看直播间实时评论并自动回复" />
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => navigate('settings')} title="设置">

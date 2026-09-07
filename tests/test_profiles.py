@@ -1,4 +1,4 @@
-"""Profile 迁移、路径与免费版门禁。"""
+"""Profile 迁移、路径与基础版门禁。"""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def test_free_cannot_add_second_profile(isolated_data, monkeypatch):
     monkeypatch.setattr(profiles_mod, "is_pro_plan", lambda: False)
     ok, msg = profiles_mod.can_add_profile(is_pro=False)
     assert not ok
-    assert "免费版" in msg
+    assert "基础版" in msg
     with pytest.raises(PermissionError):
         profiles_mod.add_profile("第二个", is_pro=False)
 

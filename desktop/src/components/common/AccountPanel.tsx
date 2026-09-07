@@ -178,7 +178,7 @@ function AccountCard({
             ) : null}
           </div>
           {accountDisabled ? (
-            <p className="mt-0.5 text-[11px] text-amber-700/80">续费专业版后自动恢复</p>
+            <p className="mt-0.5 text-[11px] text-amber-700/80">开通专业版/旗舰版后自动恢复</p>
           ) : live?.accountName ? (
             <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={live.accountName}>
               {live.accountName}
@@ -309,16 +309,26 @@ export function AccountPanel() {
   })
 
   const openAddDialog = useMemoizedFn(() => {
-    if (!status.isPro && accounts.length >= 1) {
-      toast.error('免费版只能用 1 个账号，请到「应用设置 → 收费计划」开通专业版')
+    const max = status.maxAccounts
+    if (max >= 0 && accounts.length >= max) {
+      toast.error(
+        max <= 1
+          ? '基础版只能用 1 个账号，请到「应用设置 → 收费计划」开通专业版或旗舰版'
+          : `专业版最多 ${max} 个账号，升级旗舰版可无上限`,
+      )
       return
     }
     setIsAddDialogOpen(true)
   })
 
   const handleAddAccount = useMemoizedFn(() => {
-    if (!status.isPro && accounts.length >= 1) {
-      toast.error('免费版只能用 1 个账号，请先开通专业版')
+    const max = status.maxAccounts
+    if (max >= 0 && accounts.length >= max) {
+      toast.error(
+        max <= 1
+          ? '基础版只能用 1 个账号，请先开通专业版或旗舰版'
+          : `专业版最多 ${max} 个账号，请升级旗舰版`,
+      )
       return
     }
     if (!newAccountName.trim()) {
@@ -372,7 +382,7 @@ export function AccountPanel() {
 
   const openCopyDialog = useMemoizedFn((account: Account) => {
     if (!status.isPro) {
-      toast.error('专业版可在多个账号间复制配置，请到「应用设置 → 收费计划」开通')
+      toast.error('开通专业版或旗舰版后，可在多个账号间复制配置。请到「应用设置 → 收费计划」激活卡密')
       return
     }
     const targets = accounts.filter(a => !a.disabled && a.id !== account.id)
@@ -570,7 +580,7 @@ export function AccountPanel() {
             size="sm"
             className="w-full"
             onClick={openAddDialog}
-            title="添加账号（专业版可同时使用多个账号）"
+            title="添加账号（专业版最多 3 个，旗舰版无上限）"
           >
             <Plus className="mr-1.5 h-4 w-4" />
             添加账号
@@ -619,7 +629,7 @@ export function AccountPanel() {
             <DialogHeader>
               <DialogTitle>删除账号</DialogTitle>
               <DialogDescription>
-                将清除本地配置与登录态，不会删除快手店铺账号。请先确认相关任务已停止。
+                将清除本地配置与登录态，不会删除平台店铺账号。请先确认相关任务已停止。
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">

@@ -197,7 +197,7 @@ def is_pro_plan() -> bool:
 def can_add_profile(*, is_pro: Optional[bool] = None) -> Tuple[bool, str]:
     pro = is_pro_plan() if is_pro is None else bool(is_pro)
     if not pro:
-        return False, "免费版仅支持 1 个账号，请激活卡密升级专业版"
+        return False, "基础版仅支持 1 个账号，请激活卡密升级专业版或旗舰版"
     items = list_profiles()
     if len(items) >= MAX_PROFILES:
         return False, f"账号数量已达上限（{MAX_PROFILES}）"

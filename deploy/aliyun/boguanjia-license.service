@@ -1,0 +1,18 @@
+[Unit]
+Description=Boguanjia license redeem API (independent DB from jindou)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/boguanjia-license
+Environment=JINDOU_DB=/opt/boguanjia-license/data/cards.db
+Environment=JINDOU_HOST=127.0.0.1
+Environment=JINDOU_PORT=8081
+EnvironmentFile=-/opt/boguanjia-license/secrets.env
+ExecStart=/usr/bin/python3 /opt/boguanjia-license/app.py
+Restart=always
+RestartSec=2
+User=root
+
+[Install]
+WantedBy=multi-user.target

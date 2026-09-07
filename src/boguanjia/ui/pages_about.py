@@ -124,7 +124,7 @@ class HelpPage(_InfoPage):
             "2. 如何同时跟多个账号？\n"
             "   激活专业版后，在「账号管理」新增账号并分别「打开」工作台。\n\n"
             "3. 卡密过期后？\n"
-            "   自动任务会停止；可继续使用免费版（1 个账号），或续充恢复专业版。\n\n"
+            "   自动任务会停止；可继续使用基础版（1 个账号），或续充恢复专业版/旗舰版。\n\n"
             "4. 详细步骤请参阅用户教程。"
         )
         lbl = QLabel(faq)
@@ -148,7 +148,7 @@ class HelpPage(_InfoPage):
 
 
 class AboutPage(_InfoPage):
-    def __init__(self, *, version: str = "1.0.0", parent=None) -> None:
+    def __init__(self, *, version: str = "1.1.0", parent=None) -> None:
         super().__init__("关于播管家", parent)
         ver = version.lstrip("Vv")
         lbl = QLabel(f"播管家  V{ver}\n直播跟播辅助工具\n当前平台：快手")

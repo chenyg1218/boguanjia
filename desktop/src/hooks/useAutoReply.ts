@@ -26,7 +26,9 @@ interface ReplyPreview {
 export type Message = LiveMessage
 export type MessageType = Message['msg_type']
 export type MessageOf<T extends MessageType> = Extract<Message, { msg_type: T }>
-type CommentMessage = MessageOf<'comment'>
+type CommentMessage = MessageOf<
+  'comment' | 'wechat_channel_live_msg' | 'xiaohongshu_comment' | 'taobao_comment'
+>
 
 type ListeningStatus = 'waiting' | 'listening' | 'stopped' | 'error'
 
@@ -258,7 +260,10 @@ const handleAIReply = async (
   // 筛选与该用户相关的评论和回复
   const userComments = [comment, ...allComments].filter(
     cmt =>
-      (cmt.msg_type === 'comment') &&
+      (cmt.msg_type === 'comment' ||
+        cmt.msg_type === 'wechat_channel_live_msg' ||
+        cmt.msg_type === 'xiaohongshu_comment' ||
+        cmt.msg_type === 'taobao_comment') &&
       cmt.nick_name === comment.nick_name,
   ) as CommentMessage[]
   const userReplies = allReplies.filter(reply => reply.replyFor === comment.nick_name)
@@ -330,7 +335,12 @@ export function useAutoReply() {
       return
     }
 
-    if (comment.msg_type !== 'comment') {
+    if (
+      comment.msg_type !== 'comment' &&
+      comment.msg_type !== 'wechat_channel_live_msg' &&
+      comment.msg_type !== 'xiaohongshu_comment' &&
+      comment.msg_type !== 'taobao_comment'
+    ) {
       return
     }
 

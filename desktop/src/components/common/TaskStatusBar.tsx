@@ -1,4 +1,5 @@
 import { Link } from 'react-router'
+import { PLATFORM_NAMES } from '@/constants/platforms'
 import { useCurrentAutoMessage } from '@/hooks/useAutoMessage'
 import { useAutoReply } from '@/hooks/useAutoReply'
 import { useCurrentAutoPopUp } from '@/hooks/useAutoPopUp'
@@ -59,9 +60,11 @@ export function TaskStatusBar() {
   const popupRunning = useCurrentAutoPopUp(c => c.isRunning)
   const { isRunning: replyRunning, isListening } = useAutoReply()
 
+  const platform = useCurrentLiveControl(c => c.platform)
+  const platformLabel = PLATFORM_NAMES[platform] ?? platform
   const connectionChip =
     connection === 'connected'
-      ? { value: '已连接 · 快手', tone: 'ok' as Tone }
+      ? { value: `已连接 · ${platformLabel}`, tone: 'ok' as Tone }
       : connection === 'connecting'
         ? { value: '连接中…', tone: 'busy' as Tone }
         : { value: '未连接', tone: 'muted' as Tone }

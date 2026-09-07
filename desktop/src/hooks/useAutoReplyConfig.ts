@@ -99,19 +99,11 @@ export const useAutoReplyConfigStore = create<AutoReplyConfigStore>()(
     }),
     {
       name: 'auto-reply',
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => localStorage),
       migrate: (persisted: unknown) => {
-        const data = persisted as AutoReplyConfigStore
-        // 旧版 entry（control/compass 等）统一迁到快手
-        if (data?.contexts) {
-          for (const ctx of Object.values(data.contexts)) {
-            if (ctx?.config && ctx.config.entry !== 'kuaishou') {
-              ctx.config.entry = 'kuaishou'
-            }
-          }
-        }
-        return data
+        // v4：恢复多平台监听来源，不再强制改写 entry
+        return persisted as AutoReplyConfigStore
       },
     },
   ),

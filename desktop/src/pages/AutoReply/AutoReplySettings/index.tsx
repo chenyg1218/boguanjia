@@ -35,7 +35,7 @@ export default function AutoReplySettings() {
       <Card>
         <CardHeader>
           <CardTitle>自动回复设置</CardTitle>
-          <CardDescription>配置快手中控台评论监听与自动回复</CardDescription>
+          <CardDescription>配置评论监听与自动回复</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <ListeningSourceSetting />

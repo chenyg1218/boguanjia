@@ -37,7 +37,6 @@ export function UpdateDialog() {
   const setProgress = useUpdateStore.use.setProgress()
   const updateInfo = useUpdateStore.use.versionInfo()
   const startDownload = useUpdateStore.use.startDownload()
-  const reset = useUpdateStore.use.reset()
   const error = useUpdateStore.use.error()
   const handleError = useUpdateStore.use.handleError()
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -51,15 +50,6 @@ export function UpdateDialog() {
       setDialogOpen(true)
     }
   }, [status])
-
-  const handleOpenChange = (open: boolean) => {
-    if (!open) {
-      // 先播放关闭动画
-      setDialogOpen(false)
-      // 等动画关闭后再 reset
-      setTimeout(() => reset(), 300)
-    }
-  }
 
   const quitAndInstall = async () => {
     await window.ipcRenderer.invoke(IPC_CHANNELS.updater.quitAndInstall)
@@ -104,11 +94,25 @@ export function UpdateDialog() {
       )
     }
     if (status === 'error' && error?.downloadURL) {
-      const url = error.downloadURL // 添加一步修复类型推断
+      const url = error.downloadURL
       return (
-        <Button onClick={() => openDownloadURL(url)} variant="default">
-          <Download className="mr-2 h-4 w-4" />
-          手动下载
+        <>
+          <Button onClick={() => openDownloadURL(url)} variant="outline">
+            <Download className="mr-2 h-4 w-4" />
+            手动下载
+          </Button>
+          <Button onClick={handleStartDownload} variant="default">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            重试更新
+          </Button>
+        </>
+      )
+    }
+    if (status === 'error') {
+      return (
+        <Button onClick={handleStartDownload} variant="default">
+          <RefreshCw className="mr-2 h-4 w-4" />
+          重试更新
         </Button>
       )
     }
@@ -123,10 +127,15 @@ export function UpdateDialog() {
   const isCustom = updateSource === 'custom'
 
   return (
-    <Dialog open={dialogOpen} onOpenChange={handleOpenChange}>
-      <DialogContent>
-        <DialogTitle>有新版本可用</DialogTitle>
-        <DialogDescription>现在更新以体验最新功能。</DialogDescription>
+    <Dialog open={dialogOpen} onOpenChange={() => {}}>
+      <DialogContent
+        showCloseButton={false}
+        onPointerDownOutside={e => e.preventDefault()}
+        onInteractOutside={e => e.preventDefault()}
+        onEscapeKeyDown={e => e.preventDefault()}
+      >
+        <DialogTitle>发现新版本，需更新后继续使用</DialogTitle>
+        <DialogDescription>请更新到最新版本后再使用本软件。</DialogDescription>
 
         {status !== 'error' && (
           <>
@@ -142,7 +151,6 @@ export function UpdateDialog() {
             )}
           </>
         )}
-        {/* 出错信息 */}
         {status === 'error' && error?.message && (
           <ScrollArea className="text-sm text-destructive whitespace-pre-line max-h-64">
             <h3 className="text-lg font-bold">错误</h3>
@@ -152,7 +160,6 @@ export function UpdateDialog() {
             {error.message}
           </ScrollArea>
         )}
-        {/* 进度条 */}
         {(status === 'downloading' || status === 'ready' || status === 'preparing') && (
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
@@ -192,12 +199,7 @@ export function UpdateDialog() {
               </div>
             )}
           </div>
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => handleOpenChange(false)}>
-              关闭
-            </Button>
-            {buttonModal()}
-          </div>
+          <div className="flex gap-2 justify-end">{buttonModal()}</div>
         </div>
       </DialogContent>
     </Dialog>

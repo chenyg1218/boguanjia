@@ -16,7 +16,7 @@ import { useChromeConfigStore } from './hooks/useChromeConfig'
 import { useIpcListener } from './hooks/useIpc'
 import { useLiveControlStore } from './hooks/useLiveControl'
 import { useToast } from './hooks/useToast'
-import { useUpdateConfigStore, useUpdateStore } from './hooks/useUpdate'
+import { useUpdateStore } from './hooks/useUpdate'
 import './App.css'
 
 function useGlobalIpcListener() {
@@ -25,7 +25,6 @@ function useGlobalIpcListener() {
   const { setIsConnected, setAccountName } = useLiveControlStore()
   const setIsRunningAutoMessage = useAutoMessageStore(s => s.setIsRunning)
   const setIsRunningAutoPopUp = useAutoPopUpStore(s => s.setIsRunning)
-  const enableAutoCheckUpdate = useUpdateConfigStore(s => s.enableAutoCheckUpdate)
   const handleUpdate = useUpdateStore.use.handleUpdate()
   const { toast } = useToast()
 
@@ -70,10 +69,9 @@ function useGlobalIpcListener() {
     }
   })
 
+  // 强制更新：发现新版本后始终弹窗，不可跳过
   useIpcListener(IPC_CHANNELS.app.notifyUpdate, info => {
-    if (enableAutoCheckUpdate) {
-      handleUpdate(info)
-    }
+    handleUpdate(info)
   })
 }
 

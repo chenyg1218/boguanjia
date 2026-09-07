@@ -92,7 +92,7 @@ class LicenseWindow(QDialog):
         text = str(cfg.get("announcement") or self._account.announcement or "").strip()
         if not text:
             text = (
-                "购买卡密后在此激活；未到期续充将叠加剩余时长。\n"
+                "购买卡密后在此激活；没到期再充，剩余天数会自动加上。\n"
                 "卡密购买：https://www.zaofaka.com/links/1CD589E2"
             )
         ann_cap = QLabel("公告")
@@ -146,7 +146,7 @@ class LicenseWindow(QDialog):
         super().keyPressEvent(event)
 
     def reject(self) -> None:
-        """续充可取消。启动态激活窗关闭时不再强制退出（允许免费版使用）。"""
+        """续充可取消。启动态激活窗关闭时不再强制退出（允许基础版使用）。"""
         if self._thread is not None and self._thread.isRunning():
             return
         super().reject()

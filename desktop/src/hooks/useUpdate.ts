@@ -65,7 +65,7 @@ const useUpdateStoreBase = create<UpdateStore>()((set, get) => ({
     }
   },
   startDownload: (source: string) => {
-    set({ status: 'preparing' })
+    set({ status: 'preparing', error: null })
     window.ipcRenderer.invoke(IPC_CHANNELS.updater.startDownload, source)
   },
   installUpdate: () => {
@@ -90,10 +90,8 @@ const useUpdateStoreBase = create<UpdateStore>()((set, get) => ({
 
 export const useUpdateStore = createSelectors(useUpdateStoreBase)
 interface UpdateConfigStore {
-  enableAutoCheckUpdate: boolean
   source: string
   customSource: string
-  setEnableAutoCheckUpdate: (enabled: boolean) => void
   setSource: (source: string) => void
   setCustomSource: (customSource: string) => void
 }
@@ -101,10 +99,8 @@ interface UpdateConfigStore {
 export const useUpdateConfigStore = create<UpdateConfigStore>()(
   persist(
     set => ({
-      enableAutoCheckUpdate: true,
       source: 'github',
       customSource: '',
-      setEnableAutoCheckUpdate: enabled => set({ enableAutoCheckUpdate: enabled }),
       setSource: source => set({ source }),
       setCustomSource: customSource => set({ customSource }),
     }),

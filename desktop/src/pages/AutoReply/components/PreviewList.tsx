@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { useAccounts } from '@/hooks/useAccounts'
-import { type MessageOf, useAutoReply } from '@/hooks/useAutoReply'
+import { useAutoReply } from '@/hooks/useAutoReply'
 import { cn } from '@/lib/utils'
 
 export default function PreviewList({
@@ -42,9 +42,9 @@ export default function PreviewList({
               <div className="text-center text-muted-foreground py-8">暂无回复数据</div>
             ) : (
               replies.map(reply => {
-                const relatedComment = comments.find(
-                  c => c.msg_id === reply.commentId,
-                ) as MessageOf<'comment'>
+                const relatedComment = comments.find(c => c.msg_id === reply.commentId)
+                const relatedContent =
+                  relatedComment && 'content' in relatedComment ? relatedComment.content : ''
                 return (
                   // biome-ignore lint/a11y/noStaticElementInteractions: 不用管 a11y
                   <div
@@ -57,7 +57,7 @@ export default function PreviewList({
                       {relatedComment && (
                         <div className="text-xs text-muted-foreground">
                           回复：
-                          {relatedComment.nick_name} - {relatedComment.content}
+                          {relatedComment.nick_name} - {relatedContent}
                         </div>
                       )}
                       <div className="flex items-center justify-between gap-2">

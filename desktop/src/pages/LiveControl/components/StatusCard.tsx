@@ -16,33 +16,66 @@ import {
 } from '@/hooks/useChromeConfig'
 import { useCurrentLiveControl, useCurrentLiveControlActions } from '@/hooks/useLiveControl'
 import { useToast } from '@/hooks/useToast'
+import PlatformSelect from './PlatformSelect'
 
-const StatusAlert = React.memo(() => (
-  <Alert>
-    <CircleAlert className="h-4 w-4" />
-    <AlertTitle>快手小店连接提示</AlertTitle>
-    <AlertDescription>
-      <p>首次登录请<strong>关闭无头模式</strong>后扫码；</p>
-      <p>开播与后续步骤见下方使用说明</p>
-    </AlertDescription>
-  </Alert>
-))
+const StatusAlert = React.memo(() => {
+  const platform = useCurrentLiveControl(state => state.platform)
+  if (platform === 'wxchannel') {
+    return (
+      <Alert>
+        <CircleAlert className="h-4 w-4" />
+        <AlertTitle>你选择了视频号平台，请注意以下事项：</AlertTitle>
+        <AlertDescription>
+          <ol className="list-decimal list-inside">
+            <li>
+              请先确认<strong>开播后</strong>再连接中控台
+            </li>
+            <li>
+              视频号助手无法<strong>一号多登</strong>，在别处登录视频号助手会
+              <strong>中断连接</strong>!
+            </li>
+          </ol>
+        </AlertDescription>
+      </Alert>
+    )
+  }
+  if (platform === 'taobao') {
+    return (
+      <Alert>
+        <CircleAlert className="h-4 w-4" />
+        <AlertTitle>你选择了淘宝平台，请注意以下事项：</AlertTitle>
+        <AlertDescription>
+          <ol className="list-decimal list-inside">
+            <li>
+              请先确认<strong>开播后</strong>
+              再连接中控台，因为进入淘宝中控台需要获取<strong>直播间ID</strong>
+            </li>
+            <li>
+              目前淘宝会触发人机验证，所以将<strong>强制关闭无头模式</strong>
+              ，除了登录和人机验证之外请尽量不要操作浏览器
+            </li>
+          </ol>
+        </AlertDescription>
+      </Alert>
+    )
+  }
+  // 与 oba 一致：仅视频号 / 淘宝展示平台专属连接提示，其余平台不打扰
+  return null
+})
 
 const StatusCard = React.memo(() => {
   return (
     <Card>
       <CardHeader>
         <CardTitle>控制台状态</CardTitle>
-        <CardDescription>连接快手小店直播中控台</CardDescription>
+        <CardDescription>查看并管理直播控制台的连接状态</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <ConnectState />
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground px-2 py-1.5 rounded-md border bg-muted/40">
-                快手小店
-              </span>
+              <PlatformSelect />
               <ConnectToLiveControl />
             </div>
           </div>
@@ -57,12 +90,17 @@ const StatusCard = React.memo(() => {
 
 const ConnectToLiveControl = React.memo(() => {
   const { setIsConnected } = useCurrentLiveControlActions()
+  const platform = useCurrentLiveControl(context => context.platform)
   const isConnected = useCurrentLiveControl(context => context.isConnected)
   const chromePath = useCurrentChromeConfig(context => context.path)
   const storageState = useCurrentChromeConfig(context => context.storageState)
-  const headless = useCurrentChromeConfig(context => context.headless)
+  let headless = useCurrentChromeConfig(context => context.headless)
   const account = useAccounts(store => store.getCurrentAccount())
   const { toast } = useToast()
+
+  if (platform === 'taobao') {
+    headless = false
+  }
 
   const connectLiveControl = useMemoizedFn(async () => {
     try {
@@ -80,7 +118,7 @@ const ConnectToLiveControl = React.memo(() => {
         headless,
         chromePath,
         storageState: storageState || undefined,
-        platform: 'kuaishou',
+        platform,
         account,
       })
 
@@ -199,6 +237,7 @@ const ConnectState = React.memo(() => {
 
 const HeadlessSetting = () => {
   const headless = useCurrentChromeConfig(context => context.headless ?? false)
+  const platform = useCurrentLiveControl(context => context.platform)
   const isConnected = useCurrentLiveControl(context => context.isConnected)
   const { setHeadless } = useCurrentChromeConfigActions()
   return (
@@ -210,8 +249,8 @@ const HeadlessSetting = () => {
         </div>
       </div>
       <Switch
-        checked={headless}
-        disabled={isConnected !== 'disconnected'}
+        checked={headless && platform !== 'taobao'}
+        disabled={platform === 'taobao' || isConnected !== 'disconnected'}
         onCheckedChange={v => setHeadless(v)}
       />
     </div>

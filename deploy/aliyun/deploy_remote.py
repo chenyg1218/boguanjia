@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Deploy jindou-license to Aliyun lightweight server via SSH."""
+"""Deploy license API to Aliyun via SSH.
+
+PRODUCT=jindou (default) → /opt/jindou-license · :8080 · license.sugaiming.com
+PRODUCT=boguanjia        → /opt/boguanjia-license · :8081 · bgj-license.sugaiming.com
+"""
 
 from __future__ import annotations
 
@@ -16,6 +20,26 @@ ROOT = Path(__file__).resolve().parent
 HOST = os.environ.get("JINDOU_SSH_HOST", "").strip()
 USER = os.environ.get("JINDOU_SSH_USER", "root").strip() or "root"
 PASSWORD = os.environ.get("JINDOU_SSH_PASSWORD", "")
+PRODUCT = (os.environ.get("PRODUCT") or "jindou").strip().lower()
+
+PROFILES = {
+    "jindou": {
+        "opt": "/opt/jindou-license",
+        "unit": "jindou-license",
+        "service_file": "jindou-license.service",
+        "port": 8080,
+        "public_health": "https://license.sugaiming.com/health",
+        "public_redeem": "https://license.sugaiming.com/redeem",
+    },
+    "boguanjia": {
+        "opt": "/opt/boguanjia-license",
+        "unit": "boguanjia-license",
+        "service_file": "boguanjia-license.service",
+        "port": 8081,
+        "public_health": "https://license.sugaiming.com/bgj/health",
+        "public_redeem": "https://license.sugaiming.com/bgj/redeem",
+    },
+}
 
 
 def _ssh_policy():
@@ -67,10 +91,11 @@ def run(client: paramiko.SSHClient, cmd: str, check: bool = True) -> str:
     return out
 
 
-def make_archive() -> bytes:
+def make_archive(service_file: str) -> bytes:
     buf = io.BytesIO()
+    names = ("app.py", "schema.sql", "import_cards.py", "license_crypto.py", service_file)
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        for name in ("app.py", "schema.sql", "jindou-license.service", "import_cards.py", "license_crypto.py"):
+        for name in names:
             path = ROOT / name
             if path.is_file():
                 tar.add(path, arcname=name)
@@ -78,15 +103,23 @@ def make_archive() -> bytes:
 
 
 def main() -> int:
+    if PRODUCT not in PROFILES:
+        raise RuntimeError("PRODUCT must be jindou or boguanjia")
+    profile = PROFILES[PRODUCT]
+    opt = profile["opt"]
+    unit = profile["unit"]
+    service_file = profile["service_file"]
+    port = profile["port"]
+    tmp = f"/tmp/{unit}-deploy"
+
     client = connect()
     try:
-        run(client, "mkdir -p /opt/jindou-license/data /tmp/jindou-deploy")
+        run(client, f"mkdir -p {opt}/data {tmp}")
         sftp = client.open_sftp()
-        with sftp.file("/tmp/jindou-deploy/bundle.tgz", "wb") as f:
-            f.write(make_archive())
+        with sftp.file(f"{tmp}/bundle.tgz", "wb") as f:
+            f.write(make_archive(service_file))
         secrets_local = ROOT / "secrets.env.local"
         if secrets_local.is_file():
-            # 只含 KEY=VALUE，去掉注释行后写入服务器
             lines = []
             for line in secrets_local.read_text(encoding="utf-8").splitlines():
                 s = line.strip()
@@ -94,47 +127,48 @@ def main() -> int:
                     continue
                 lines.append(s)
             body = ("\n".join(lines) + "\n").encode("utf-8")
-            with sftp.file("/opt/jindou-license/secrets.env", "wb") as f:
+            with sftp.file(f"{opt}/secrets.env", "wb") as f:
                 f.write(body)
-            print("Uploaded /opt/jindou-license/secrets.env")
+            print(f"Uploaded {opt}/secrets.env")
         else:
             print("WARN: secrets.env.local missing — skip secrets upload")
         sftp.close()
 
-        run(client, "chmod 600 /opt/jindou-license/secrets.env 2>/dev/null || true", check=False)
+        run(client, f"chmod 600 {opt}/secrets.env 2>/dev/null || true", check=False)
         run(
             client,
-            "cd /tmp/jindou-deploy && tar xzf bundle.tgz && "
-            "cp -f app.py schema.sql import_cards.py license_crypto.py /opt/jindou-license/ && "
-            "cp -f jindou-license.service /etc/systemd/system/jindou-license.service",
+            f"cd {tmp} && tar xzf bundle.tgz && "
+            f"cp -f app.py schema.sql import_cards.py license_crypto.py {opt}/ && "
+            f"cp -f {service_file} /etc/systemd/system/{unit}.service",
         )
         run(client, "python3 -m pip install -q 'PyNaCl>=1.5.0' || pip3 install -q 'PyNaCl>=1.5.0'", check=False)
-        run(client, "cd /opt/jindou-license && python3 -c \"import app; app.init_db()\"")
+        run(client, f"cd {opt} && python3 -c \"import app; app.init_db()\"")
         run(client, "systemctl daemon-reload")
-        run(client, "systemctl enable --now jindou-license")
-        run(client, "systemctl restart jindou-license")
-        # HTTPS 反代时不要停 nginx；仅确保本机 8080 健康
-        run(client, "systemctl --no-pager --full status jindou-license || true", check=False)
+        run(client, f"systemctl enable --now {unit}")
+        run(client, f"systemctl restart {unit}")
+        run(client, f"systemctl --no-pager --full status {unit} || true", check=False)
         run(
             client,
             "python3 - <<'PY'\n"
             "import urllib.request\n"
-            "print(urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5).read().decode())\n"
+            f"print(urllib.request.urlopen('http://127.0.0.1:{port}/health', timeout=5).read().decode())\n"
             "PY",
         )
-        # 公网 HTTPS 冒烟（应仍可 health；signed API 需客户端）
         run(
             client,
             "python3 - <<'PY'\n"
             "import urllib.request,ssl\n"
             "ctx=ssl.create_default_context()\n"
-            "u='https://license.sugaiming.com/health'\n"
-            "print(urllib.request.urlopen(u, timeout=15, context=ctx).read().decode())\n"
+            f"u={profile['public_health']!r}\n"
+            "try:\n"
+            "    print(urllib.request.urlopen(u, timeout=15, context=ctx).read().decode())\n"
+            "except Exception as e:\n"
+            "    print('public health skip:', e)\n"
             "PY",
             check=False,
         )
         run(client, "systemctl is-active nginx >/dev/null && systemctl reload nginx || true", check=False)
-        print("Deploy OK:", "https://license.sugaiming.com/redeem", f"(origin {HOST}:8080)")
+        print("Deploy OK:", profile["public_redeem"], f"(origin {HOST}:{port}, db={opt}/data/cards.db)")
         return 0
     finally:
         client.close()

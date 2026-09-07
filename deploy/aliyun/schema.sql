@@ -4,14 +4,16 @@ CREATE TABLE IF NOT EXISTS cards (
   days INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'unused',
   used_at TEXT,
-  redeemed_by TEXT
+  redeemed_by TEXT,
+  plan TEXT NOT NULL DEFAULT 'flagship'
 );
 
 CREATE TABLE IF NOT EXISTS machines (
   machine_id TEXT PRIMARY KEY NOT NULL,
   expires_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  revoked INTEGER NOT NULL DEFAULT 0
+  revoked INTEGER NOT NULL DEFAULT 0,
+  plan TEXT NOT NULL DEFAULT 'flagship'
 );
 
 CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status);

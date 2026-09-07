@@ -1,5 +1,7 @@
 import { useMemoizedFn } from 'ahooks'
 import { useState } from 'react'
+import { formatMaxAccounts, planDisplayName } from 'shared/licensePlan'
+import { PRICING_PLANS } from '@/constants/pricing'
 import { useLicense } from '@/hooks/useLicense'
 import { useToast } from '@/hooks/useToast'
 import { Button } from '../../../components/ui/button'
@@ -69,49 +71,50 @@ export function LicenseSetting() {
       <CardHeader>
         <CardTitle>收费计划</CardTitle>
         <CardDescription>
-          免费版和专业版功能相同（自动发言、弹窗、回复都能用），区别只在能用几个账号。
+          各档功能相同（自动发言、弹窗、回复都能用），区别只在直播账号数量与价格。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2 text-sm">
-          <div
-            className={`rounded-lg border p-3 space-y-1.5 ${
-              status.isPro ? '' : 'border-primary/30 bg-primary/5'
-            }`}
-          >
-            <div className="font-medium">免费版</div>
-            <p className="text-muted-foreground leading-relaxed">
-              永久免费，可登录 <span className="text-foreground font-medium">1 个</span> 账号，适合单店试用。
-            </p>
-          </div>
-          <div
-            className={`rounded-lg border p-3 space-y-1.5 ${
-              status.isPro ? 'border-primary/30 bg-primary/5' : ''
-            }`}
-          >
-            <div className="font-medium">专业版</div>
-            <p className="text-muted-foreground leading-relaxed">
-              购买卡密开通后，可同时管理 <span className="text-foreground font-medium">多个</span> 账号，每个账号独立配置、独立跑任务。
-            </p>
-          </div>
+        <div className="grid gap-3 sm:grid-cols-3 text-sm">
+          {PRICING_PLANS.map(plan => {
+            const active = status.plan === plan.id
+            return (
+              <div
+                key={plan.id}
+                className={`rounded-lg border p-3 space-y-1.5 ${
+                  active ? 'border-primary/30 bg-primary/5' : ''
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-medium">{plan.name}</div>
+                  {active ? (
+                    <span className="text-[11px] text-primary font-medium">当前</span>
+                  ) : null}
+                </div>
+                <p className="text-base font-semibold tracking-tight">{plan.price}</p>
+                <p className="text-orange-600 dark:text-orange-400 font-medium">
+                  {plan.accountLimitHighlight}
+                </p>
+                <p className="text-muted-foreground leading-relaxed text-xs">{plan.subtitle}</p>
+              </div>
+            )
+          })}
         </div>
 
         <div className="rounded-lg border p-4 space-y-2 text-sm">
           <div className="flex justify-between gap-4">
             <span className="text-muted-foreground">当前版本</span>
-            <span className="font-medium">{status.isPro ? '专业版' : '免费版'}</span>
+            <span className="font-medium">{planDisplayName(status.plan)}</span>
           </div>
           <div className="flex justify-between gap-4">
             <span className="text-muted-foreground">到期时间</span>
             <span className="font-medium">
-              {status.isPro ? status.expiresAt || '—' : '无需到期（免费）'}
+              {status.isPro ? status.expiresAt || '—' : '长期有效'}
             </span>
           </div>
           <div className="flex justify-between gap-4">
             <span className="text-muted-foreground">可用账号数</span>
-            <span className="font-medium">
-              {status.isPro ? '不限' : '仅 1 个'}
-            </span>
+            <span className="font-medium">{formatMaxAccounts(status.maxAccounts)}</span>
           </div>
           {warning ? <p className="text-amber-600 text-xs pt-1">{warning}</p> : null}
         </div>
@@ -119,9 +122,15 @@ export function LicenseSetting() {
         {status.announcement ? <AnnouncementBlock text={status.announcement} /> : null}
 
         <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">
-            已有卡密？粘贴到下方即可激活或续期（未到期续充会把剩余天数叠加上去）。
-          </p>
+          <div className="text-sm text-muted-foreground space-y-1.5 leading-relaxed">
+            <p>已有卡密？粘贴到下方点「激活」即可开通或续期。</p>
+            <ul className="list-disc list-inside space-y-0.5 pl-0.5">
+              <li>没到期再充：剩余天数会自动加上去</li>
+              <li>同档卡密：延长使用时间</li>
+              <li>更高档卡密：升级版本，并延长时间</li>
+              <li>更低档卡密：需等当前版本到期后再用（卡不会被扣掉）</li>
+            </ul>
+          </div>
           <div className="flex gap-2">
             <Input
               placeholder="粘贴卡密"

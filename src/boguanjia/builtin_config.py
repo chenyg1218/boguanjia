@@ -40,7 +40,7 @@ def builtin_license_config() -> Dict[str, Any]:
         return data
     return {
         "redeem_url": "https://license.sugaiming.com/redeem",
-        "announcement": "购买卡密后在此激活；未到期续充将叠加剩余时长。\n卡密购买：https://www.zaofaka.com/links/1CD589E2",
+        "announcement": "购买卡密后在此激活；没到期再充，剩余天数会自动加上。\n卡密购买：https://www.zaofaka.com/links/1CD589E2",
         "timeout_seconds": 15,
         "offline_grace_days": 2,
     }

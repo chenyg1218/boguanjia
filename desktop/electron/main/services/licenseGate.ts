@@ -2,9 +2,9 @@ import { Result } from '@praha/byethrow'
 import { ErrorFactory } from '@praha/error-factory'
 import { licenseService } from '#/services/LicenseService'
 
-/** 免费版禁用多余账号时的统一提示（主进程权威） */
+/** 基础版 / 超出档位时禁用账号的统一提示（主进程权威） */
 export const LICENSE_ACCOUNT_DENIED =
-  '该账号已禁用（免费版仅可用默认账号），请续费专业版后使用，或切换到默认账号'
+  '该账号已超出当前档位可用数量，请升级旗舰版或切换到已授权账号'
 
 class LicenseAccountDeniedError extends ErrorFactory({
   name: 'LicenseAccountDeniedError',
@@ -12,7 +12,7 @@ class LicenseAccountDeniedError extends ErrorFactory({
 }) {}
 
 /**
- * 主进程强制：免费版仅允许 default 账号连接/启任务。
+ * 主进程强制：基础版仅允许 default 账号连接/启任务。
  * 不信任渲染进程传来的 disabled 标志。
  */
 export function assertAccountLicensed(accountId: string): Result.Result<void, Error> {

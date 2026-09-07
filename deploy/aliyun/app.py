@@ -42,7 +42,25 @@ _rate_buckets = {}
 _db_lock = threading.Lock()
 
 
-def _issue_license_token(machine_id, expires_at_utc):
+def _normalize_plan(plan):
+    raw = (plan or "").strip().lower()
+    if raw in ("pro", "professional"):
+        return "pro"
+    if raw in ("flagship", "ultimate", "unlimited"):
+        return "flagship"
+    return "flagship"
+
+
+def _plan_rank(plan):
+    return 2 if _normalize_plan(plan) == "flagship" else 1
+
+
+def _max_accounts(plan):
+    """专业版 3；旗舰版 -1（无上限）。"""
+    return 3 if _normalize_plan(plan) == "pro" else -1
+
+
+def _issue_license_token(machine_id, expires_at_utc, plan="flagship"):
     if not SIGNING_SEED or not machine_id or not expires_at_utc:
         return ""
     try:
@@ -54,19 +72,23 @@ def _issue_license_token(machine_id, expires_at_utc):
             _now_iso(),
             SESSION_GRACE_DAYS,
             SIGNING_SEED,
+            plan=_normalize_plan(plan),
         )
     except Exception as exc:
         print("license token issue failed:", exc)
         return ""
 
 
-def _attach_token(data, machine_id):
+def _attach_token(data, machine_id, plan="flagship"):
     if not isinstance(data, dict):
         return data
     mid = _normalize_machine_id(machine_id)
     exp = str(data.get("expires_at") or "")
+    plan_n = _normalize_plan(plan or data.get("plan"))
+    data["plan"] = plan_n
+    data["max_accounts"] = _max_accounts(plan_n)
     if data.get("ok") and mid and exp and not data.get("revoked"):
-        tok = _issue_license_token(mid, exp)
+        tok = _issue_license_token(mid, exp, plan_n)
         if tok:
             data["license_token"] = tok
     return data
@@ -146,13 +168,24 @@ def _migrate(conn):
     cols = {row[1] for row in conn.execute("PRAGMA table_info(cards)").fetchall()}
     if cols and "redeemed_by" not in cols:
         conn.execute("ALTER TABLE cards ADD COLUMN redeemed_by TEXT")
+    if cols and "plan" not in cols:
+        # 历史卡密默认旗舰（原先付费即多账号无上限）
+        conn.execute(
+            "ALTER TABLE cards ADD COLUMN plan TEXT NOT NULL DEFAULT 'flagship'"
+        )
     conn.execute(
         "CREATE TABLE IF NOT EXISTS machines ("
         "machine_id TEXT PRIMARY KEY NOT NULL,"
         "expires_at TEXT NOT NULL,"
         "updated_at TEXT NOT NULL,"
-        "revoked INTEGER NOT NULL DEFAULT 0)"
+        "revoked INTEGER NOT NULL DEFAULT 0,"
+        "plan TEXT NOT NULL DEFAULT 'flagship')"
     )
+    mcols = {row[1] for row in conn.execute("PRAGMA table_info(machines)").fetchall()}
+    if mcols and "plan" not in mcols:
+        conn.execute(
+            "ALTER TABLE machines ADD COLUMN plan TEXT NOT NULL DEFAULT 'flagship'"
+        )
 
 
 def init_db():
@@ -200,13 +233,50 @@ def _payload_base(**extra):
 
 def _get_machine(conn, mid):
     return conn.execute(
-        "SELECT machine_id, expires_at, updated_at, revoked FROM machines WHERE machine_id = ?",
+        "SELECT machine_id, expires_at, updated_at, revoked, plan FROM machines WHERE machine_id = ?",
         (mid,),
     ).fetchone()
 
 
-def _stack_machine_expires(conn, mid, days):
-    """服务端叠加：新到期 = max(现在, 已有未过期到期) + days。不改动已有 revoked。"""
+def _active_plan(conn, mid):
+    """未过期且未吊销时返回当前档位，否则 None（可重新选档）。"""
+    row = _get_machine(conn, mid)
+    if row is None or int(row["revoked"] or 0) != 0:
+        return None
+    exp_dt = _parse_expires(row["expires_at"])
+    if exp_dt is None or exp_dt < _now_utc():
+        return None
+    try:
+        return _normalize_plan(row["plan"])
+    except (KeyError, IndexError):
+        return "flagship"
+
+
+def _redeem_plan_decision(current_plan, card_plan):
+    """
+    同档续费、高档升级；低档卡在高档未到期时拒绝（调用方须尚未烧卡）。
+    返回 (ok, error, result_plan)。
+    """
+    card_n = _normalize_plan(card_plan)
+    if not current_plan:
+        return True, "", card_n
+    cur_n = _normalize_plan(current_plan)
+    if card_n == cur_n:
+        return True, "", card_n
+    if _plan_rank(card_n) > _plan_rank(cur_n):
+        return True, "", card_n
+    cur_name = "旗舰版" if cur_n == "flagship" else "专业版"
+    card_name = "旗舰版" if card_n == "flagship" else "专业版"
+    return (
+        False,
+        "当前为%s有效期内，请使用同档或更高档卡密续费/升级；"
+        "%s卡密需等当前档到期后再激活（卡密未核销）" % (cur_name, card_name),
+        cur_n,
+    )
+
+
+def _stack_machine_expires(conn, mid, days, plan="flagship"):
+    """服务端叠加天数，并写入已裁定的档位。不改动已有 revoked。"""
     now = _now_utc()
     row = _get_machine(conn, mid)
     base = now
@@ -214,17 +284,18 @@ def _stack_machine_expires(conn, mid, days):
         cur = _parse_expires(row["expires_at"])
         if cur is not None and cur > now:
             base = cur
+    new_plan = _normalize_plan(plan)
     new_exp = base + timedelta(days=int(days))
     exp_s = _fmt_expires_utc(new_exp)
     updated = _now_iso()
-    # 冲突更新时保留 revoked，禁止靠续充解除吊销
     conn.execute(
-        "INSERT INTO machines (machine_id, expires_at, updated_at, revoked) VALUES (?, ?, ?, 0) "
+        "INSERT INTO machines (machine_id, expires_at, updated_at, revoked, plan) "
+        "VALUES (?, ?, ?, 0, ?) "
         "ON CONFLICT(machine_id) DO UPDATE SET expires_at=excluded.expires_at, "
-        "updated_at=excluded.updated_at",
-        (mid, exp_s, updated),
+        "updated_at=excluded.updated_at, plan=excluded.plan",
+        (mid, exp_s, updated, new_plan),
     )
-    return exp_s
+    return exp_s, new_plan
 
 
 def _machine_revoked(conn, mid):
@@ -234,8 +305,9 @@ def _machine_revoked(conn, mid):
 
 def redeem(card, machine_id=""):
     """
-    首次核销：unused → used，绑定 machine_id，并在 machines 表叠加到期。
-    同机重试：replay，返回已有 days/used_at/expires_at，不再叠加。
+    首次核销：unused → used，绑定 machine_id，并在 machines 表叠加到期与档位。
+    规则：同档续时长；更高档可升级并叠加天数；更低档在高档未到期时拒绝且不烧卡。
+    同机重试：replay，返回已有 days/used_at/expires_at/plan，不再叠加。
     已吊销机器：拒绝核销（不烧卡），也无法靠续充解除吊销。
     """
     card = (card or "").strip().upper()
@@ -256,7 +328,7 @@ def redeem(card, machine_id=""):
                 )
 
             row = conn.execute(
-                "SELECT card, days, status, used_at, redeemed_by FROM cards WHERE card = ?",
+                "SELECT card, days, status, used_at, redeemed_by, plan FROM cards WHERE card = ?",
                 (card,),
             ).fetchone()
             if row is None:
@@ -266,8 +338,18 @@ def redeem(card, machine_id=""):
             if days <= 0:
                 return 400, _payload_base(ok=False, error="卡密天数无效，未核销")
 
+            try:
+                card_plan = _normalize_plan(row["plan"])
+            except (KeyError, IndexError):
+                card_plan = "flagship"
+
             status = row["status"]
             if status == "unused":
+                active = _active_plan(conn, mid)
+                ok_plan, plan_err, result_plan = _redeem_plan_decision(active, card_plan)
+                if not ok_plan:
+                    return 409, _payload_base(ok=False, error=plan_err)
+
                 used_at = _now_iso()
                 cur = conn.execute(
                     "UPDATE cards SET status = ?, used_at = ?, redeemed_by = ? "
@@ -277,11 +359,14 @@ def redeem(card, machine_id=""):
                 if cur.rowcount != 1:
                     conn.rollback()
                     row2 = conn.execute(
-                        "SELECT days, used_at, redeemed_by FROM cards WHERE card = ?",
+                        "SELECT days, used_at, redeemed_by, plan FROM cards WHERE card = ?",
                         (card,),
                     ).fetchone()
                     if row2 and (row2["redeemed_by"] or "").lower() == mid:
                         m = _get_machine(conn, mid)
+                        mplan = _normalize_plan(
+                            m["plan"] if m is not None else card_plan
+                        )
                         return 200, _attach_token(
                             _payload_base(
                                 ok=True,
@@ -291,10 +376,13 @@ def redeem(card, machine_id=""):
                                 replay=True,
                             ),
                             mid,
+                            mplan,
                         )
                     return 409, _payload_base(ok=False, error="卡密已使用")
 
-                expires_at = _stack_machine_expires(conn, mid, days)
+                expires_at, machine_plan = _stack_machine_expires(
+                    conn, mid, days, result_plan
+                )
                 conn.commit()
                 return 200, _attach_token(
                     _payload_base(
@@ -303,13 +391,16 @@ def redeem(card, machine_id=""):
                         used_at=used_at,
                         expires_at=expires_at,
                         replay=False,
+                        upgraded=bool(active and result_plan != active),
                     ),
                     mid,
+                    machine_plan,
                 )
 
             bound = (row["redeemed_by"] or "").strip().lower()
             if bound and bound == mid:
                 m = _get_machine(conn, mid)
+                mplan = _normalize_plan(m["plan"] if m is not None else card_plan)
                 return 200, _attach_token(
                     _payload_base(
                         ok=True,
@@ -319,6 +410,7 @@ def redeem(card, machine_id=""):
                         replay=True,
                     ),
                     mid,
+                    mplan,
                 )
             return 409, _payload_base(ok=False, error="卡密已使用")
         finally:
@@ -326,7 +418,7 @@ def redeem(card, machine_id=""):
 
 
 def validate(machine_id=""):
-    """启动心跳：返回服务端时间与该机登记到期；可检测吊销。"""
+    """启动心跳：返回服务端时间与该机登记到期/档位；可检测吊销。"""
     mid = _normalize_machine_id(machine_id)
     if not mid:
         return 400, _payload_base(ok=False, error="缺少本机标识")
@@ -342,21 +434,31 @@ def validate(machine_id=""):
                     known=False,
                     revoked=False,
                     expires_at="",
+                    plan="free",
+                    max_accounts=1,
                 )
             revoked = int(row["revoked"] or 0) != 0
             exp = row["expires_at"] or ""
             exp_dt = _parse_expires(exp)
             now = _now_utc()
             expired = exp_dt is None or exp_dt < now
+            try:
+                plan = _normalize_plan(row["plan"])
+            except (KeyError, IndexError):
+                plan = "flagship"
             data = _payload_base(
                 ok=not revoked,
                 known=True,
                 revoked=revoked,
                 expired=expired,
                 expires_at=exp,
+                plan=plan if not expired and not revoked else "free",
+                max_accounts=(
+                    _max_accounts(plan) if not expired and not revoked else 1
+                ),
             )
             if not revoked and not expired:
-                data = _attach_token(data, mid)
+                data = _attach_token(data, mid, plan)
             return 200, data
         finally:
             conn.close()

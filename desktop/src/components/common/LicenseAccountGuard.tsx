@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
+import { pickLicensedAccountIds } from 'shared/licensePlan'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useAutoMessageStore } from '@/hooks/useAutoMessage'
 import { useAutoPopUpStore } from '@/hooks/useAutoPopUp'
@@ -9,16 +10,15 @@ import { useLiveControlStore } from '@/hooks/useLiveControl'
 import { useToast } from '@/hooks/useToast'
 
 /**
- * 专业版过期 / 未激活时：自动禁用多余账号（保留配置与登录态），续费后自动恢复。
- * 主进程会同步拆掉多余会话；此处负责前端状态与软禁用。
+ * 按档位账号上限收敛：禁用超额账号（保留配置），并把白名单同步给主进程。
  */
 export function LicenseAccountGuard() {
   const ready = useLicense(s => s.ready)
-  const isPro = useLicense(s => s.status.isPro)
+  const plan = useLicense(s => s.status.plan)
+  const maxAccounts = useLicense(s => s.status.maxAccounts)
   const accounts = useAccounts(s => s.accounts)
   const currentAccountId = useAccounts(s => s.currentAccountId)
   const setAccountDisabled = useAccounts(s => s.setAccountDisabled)
-  const enableAllAccounts = useAccounts(s => s.enableAllAccounts)
   const switchAccount = useAccounts(s => s.switchAccount)
   const setMessageRunning = useAutoMessageStore(s => s.setIsRunning)
   const setPopupRunning = useAutoPopUpStore(s => s.setIsRunning)
@@ -27,31 +27,44 @@ export function LicenseAccountGuard() {
   const setConnected = useLiveControlStore(s => s.setIsConnected)
   const { toast } = useToast()
   const convergingRef = useRef(false)
-  const handledRef = useRef(false)
+  const lastKeyRef = useRef('')
 
-  const activeExtras = accounts.filter(a => a.id !== 'default' && !a.disabled)
-  const needConverge = ready && !isPro && activeExtras.length > 0
-  const extraIdsKey = activeExtras.map(a => a.id).join(',')
+  const accountIdsKey = accounts.map(a => a.id).join(',')
+  const disabledKey = accounts.map(a => `${a.id}:${a.disabled ? 1 : 0}`).join(',')
 
   useEffect(() => {
-    if (ready && isPro) {
-      enableAllAccounts()
-      handledRef.current = false
-      convergingRef.current = false
+    if (!ready) return
+
+    const allowed = new Set(pickLicensedAccountIds(accounts, maxAccounts))
+    const extrasToDisable = accounts.filter(a => a.id !== 'default' && !allowed.has(a.id) && !a.disabled)
+    const toEnable = accounts.filter(a => allowed.has(a.id) && a.disabled)
+
+    const key = `${plan}|${maxAccounts}|${accountIdsKey}|${[...allowed].join(',')}`
+    void window.ipcRenderer
+      .invoke(IPC_CHANNELS.license.syncAccounts, [...allowed])
+      .catch(() => {})
+
+    if (key === lastKeyRef.current && extrasToDisable.length === 0 && toEnable.length === 0) {
+      return
     }
-  }, [ready, isPro, enableAllAccounts])
+    lastKeyRef.current = key
 
-  useEffect(() => {
-    if (!needConverge || handledRef.current || convergingRef.current) return
+    for (const acc of toEnable) {
+      setAccountDisabled(acc.id, false)
+    }
 
-    const extras = accounts.filter(a => a.id !== 'default' && !a.disabled)
-    if (extras.length === 0) return
+    if (extrasToDisable.length === 0) {
+      if (currentAccountId !== 'default' && !allowed.has(currentAccountId)) {
+        switchAccount('default')
+      }
+      return
+    }
 
+    if (convergingRef.current) return
     convergingRef.current = true
-    handledRef.current = true
 
     void (async () => {
-      for (const acc of extras) {
+      for (const acc of extrasToDisable) {
         try {
           await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.autoMessage.stop, acc.id)
         } catch {
@@ -80,16 +93,23 @@ export function LicenseAccountGuard() {
         setAccountDisabled(acc.id, true)
       }
 
-      if (currentAccountId !== 'default') {
+      if (!allowed.has(currentAccountId)) {
         switchAccount('default')
       }
 
-      toast.success('已降为免费版：多余账号已自动禁用（配置与登录态保留），续费后自动恢复')
+      const tip =
+        maxAccounts <= 1
+          ? '已降为基础版：多余账号已自动禁用（配置保留），开通专业版/旗舰版后按档位恢复'
+          : `已按当前档位限制为 ${maxAccounts} 个账号：超额账号已禁用（配置保留）`
+      toast.success(tip)
       convergingRef.current = false
     })()
   }, [
-    needConverge,
-    extraIdsKey,
+    ready,
+    plan,
+    maxAccounts,
+    accountIdsKey,
+    disabledKey,
     accounts,
     currentAccountId,
     setAccountDisabled,

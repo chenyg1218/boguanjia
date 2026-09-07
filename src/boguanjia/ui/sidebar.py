@@ -37,7 +37,7 @@ class SideNav(QWidget):
 
     navigated = Signal(str)  # nav key
 
-    def __init__(self, *, version: str = "1.0.0", parent=None) -> None:
+    def __init__(self, *, version: str = "1.1.0", parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("sideNav")
         self.setFixedWidth(208)
@@ -82,7 +82,7 @@ class SideNav(QWidget):
         self.lbl_expiry.setWordWrap(True)
         fl.addWidget(self.lbl_expiry)
 
-        upgrade = QPushButton("免费版（可升级）")
+        upgrade = QPushButton("基础版（可升级）")
         upgrade.setObjectName("sideUpgrade")
         upgrade.setCursor(Qt.PointingHandCursor)
         upgrade.clicked.connect(lambda: self._on_click(NAV_PRICING))
@@ -148,4 +148,4 @@ class SideNav(QWidget):
         if is_pro:
             self._upgrade_btn.setText("专业版")
         else:
-            self._upgrade_btn.setText("免费版（可升级）")
+            self._upgrade_btn.setText("基础版（可升级）")

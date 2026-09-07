@@ -13,11 +13,7 @@ jobs:
   release:
     permissions:
       contents: write
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
+    runs-on: windows-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -41,25 +37,24 @@ jobs:
         run: pnpm build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # CI 无 Apple 签名证书时跳过自动发现，避免 macOS 打包失败
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Extract changelog
         id: changelog
+        shell: bash
         run: |
-          echo "notes<<EOF" >> $GITHUB_OUTPUT
-          node scripts/extract-changelog.js >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          node scripts/extract-changelog.js >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
-      - name: Create Release and Upload Assets
+      - name: Create Release and Upload Installer
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
           body: ${{ steps.changelog.outputs.notes }}
+          # 仅上传 Windows 客户端安装包及自动更新元数据
           files: |
             desktop/release/*/*.exe
-            desktop/release/*/*.dmg
-            desktop/release/*/*.blockmap
-            desktop/release/*/latest*.yml
+            desktop/release/*/*.exe.blockmap
+            desktop/release/*/latest.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -49,7 +49,7 @@ export function OtherSetting() {
             <div className="space-y-1">
               <h4 className="text-sm font-medium leading-none">关于播管家</h4>
               <p className="text-sm text-muted-foreground">
-                快手跟播辅助 · 免费版 1 账号 / 专业版多账号
+                直播跟播辅助 · 基础版 1 账号 / 专业版月卡 3 账号 / 旗舰版月卡无上限
               </p>
             </div>
           </div>

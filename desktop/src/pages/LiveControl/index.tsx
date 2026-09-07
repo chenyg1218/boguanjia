@@ -6,7 +6,7 @@ export default function BrowserControl() {
   return (
     <div className="container py-8 space-y-4">
       <div>
-        <Title title="直播控制台" description="连接快手小店中控台，开始跟播" />
+        <Title title="直播控制台" description="连接直播中控台，开始跟播" />
       </div>
 
       <div className="space-y-8">

@@ -70,6 +70,8 @@ export const IPC_CHANNELS = {
     status: 'license:status',
     activate: 'license:activate',
     sync: 'license:sync',
+    /** 渲染进程同步账号 ID 列表，供主进程按档位上限强制 */
+    syncAccounts: 'license:syncAccounts',
     /** 主进程运行中复检后推送（到期 / 心跳） */
     changed: 'license:changed',
   },

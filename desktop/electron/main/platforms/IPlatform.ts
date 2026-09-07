@@ -41,6 +41,29 @@ export function isPerformComment(platform: IPlatform): platform is IPlatform & I
   return '_isPerformComment' in platform && platform._isPerformComment === true
 }
 
+export interface IPinComment {
+  _isPinComment: true
+  /** 置顶评论 */
+  pinComment(comment: string, signal?: AbortSignal): Result.ResultAsync<void, PlatformError>
+  /** 获取置顶评论任务所需的页面 */
+  getPinCommentPage(): Page | null
+}
+
+export function isPinComment(platform: IPlatform): platform is IPlatform & IPinComment {
+  return '_isPinComment' in platform && platform._isPinComment === true
+}
+
+export interface ISendRedPacket {
+  _isSendRedPacket: true
+  /** 一键发红包：点击发红包按钮，选择店铺红包，投放已有红包，选择限时领取时长 */
+  sendRedPacket(duration: string, signal?: AbortSignal): Result.ResultAsync<void, PlatformError>
+  getRedPacketPage(): Page | null
+}
+
+export function isSendRedPacket(platform: IPlatform): platform is IPlatform & ISendRedPacket {
+  return '_isSendRedPacket' in platform && platform._isSendRedPacket === true
+}
+
 export interface IPlatform {
   get platformName(): string
   /** 连接到中控台，最终停留在中控台页面 */

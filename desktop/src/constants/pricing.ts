@@ -1,0 +1,50 @@
+/** 对外展示的收费档位（文案与设置页共用） */
+export const PRICING_PLANS = [
+  {
+    id: 'free',
+    name: '基础版',
+    subtitle: '适合单店日常跟播，功能齐全',
+    price: '0 元',
+    accountLimit: '1 个直播账号',
+    accountLimitHighlight: '1 个直播账号',
+    features: [
+      '智能自动回复评论',
+      '定时自动发言功能',
+      '自动弹出商品卡片',
+      'AI 智能辅助功能',
+    ],
+  },
+  {
+    id: 'pro',
+    name: '专业版',
+    subtitle: '适合多店并行稳定运营',
+    price: '29 元 / 月',
+    accountLimit: '3 个直播账号',
+    accountLimitHighlight: '3 个直播账号',
+    features: [
+      '智能自动回复评论',
+      '定时自动发言功能',
+      '自动弹出商品卡片',
+      'AI 智能辅助功能',
+      '3 个直播账号（支持同时在线 3 个）',
+      '多账号管理，方便切换与管理',
+    ],
+  },
+  {
+    id: 'flagship',
+    name: '旗舰版',
+    subtitle: '适合团队化、多账号重度运营',
+    price: '39 元 / 月',
+    accountLimit: '无限制',
+    accountLimitHighlight: '无限制',
+    features: [
+      '智能自动回复评论',
+      '定时自动发言功能',
+      '自动弹出商品卡片',
+      'AI 智能辅助功能',
+      '直播账号数量无限制',
+      '多账号管理，方便切换与管理',
+      '专属客服支持，优先响应',
+    ],
+  },
+] as const

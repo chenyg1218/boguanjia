@@ -41,12 +41,23 @@ def _verify_key():
     return VerifyKey(bytes.fromhex(LICENSE_VERIFY_KEY_HEX))
 
 
+def _normalize_plan(plan):
+    raw = (plan or "").strip().lower()
+    if raw in ("pro", "professional"):
+        return "pro"
+    if raw in ("flagship", "ultimate", "unlimited"):
+        return "flagship"
+    # 旧卡密/缺省：按旗舰（无上限）兼容历史「专业版多账号」
+    return "flagship"
+
+
 def build_signed_token(
     machine_id,
     expires_at_utc,
     issued_at_utc,
     grace_days,
     signing_seed_hex,
+    plan="flagship",
 ):
     from nacl.signing import SigningKey
 
@@ -55,6 +66,7 @@ def build_signed_token(
         "e": (expires_at_utc or "").strip(),
         "i": (issued_at_utc or "").strip(),
         "g": int(grace_days),
+        "p": _normalize_plan(plan),
     }
     body = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     sk = SigningKey(bytes.fromhex(signing_seed_hex.strip()))

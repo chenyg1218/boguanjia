@@ -140,6 +140,7 @@ export interface IpcChannels {
   // License / 收费计划
   [IPC_CHANNELS.license.status]: () => {
     isPro: boolean
+    plan: 'free' | 'pro' | 'flagship'
     expiresAt: string
     announcement: string
     machineId: string
@@ -150,6 +151,7 @@ export interface IpcChannels {
     message: string
     status: {
       isPro: boolean
+      plan: 'free' | 'pro' | 'flagship'
       expiresAt: string
       announcement: string
       machineId: string
@@ -159,6 +161,7 @@ export interface IpcChannels {
   [IPC_CHANNELS.license.sync]: () => {
     status: {
       isPro: boolean
+      plan: 'free' | 'pro' | 'flagship'
       expiresAt: string
       announcement: string
       machineId: string
@@ -166,9 +169,11 @@ export interface IpcChannels {
     }
     warning?: string
   }
+  [IPC_CHANNELS.license.syncAccounts]: (accountIds: string[]) => string[]
   [IPC_CHANNELS.license.changed]: (payload: {
     status: {
       isPro: boolean
+      plan: 'free' | 'pro' | 'flagship'
       expiresAt: string
       announcement: string
       machineId: string
