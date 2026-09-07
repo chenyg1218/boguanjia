@@ -28,11 +28,23 @@ type LatestYml = {
 
 const GITHUB_OWNER = 'chenyg1218'
 const GITHUB_REPO = 'boguanjia'
+/** 国内默认更新源（需在 Gitee Releases 同步上传安装包与 latest.yml） */
+const GITEE_OWNER = 'codercyg'
+const GITEE_REPO = 'boguanjia'
 const CDN_URL = 'https://fastly.jsdelivr.net/gh/'
 /** 与 electron-builder artifactName（${name}_…）一致，便于手动下载 URL */
 const PRODUCT_NAME = packageJson.name
 const CHANGELOG_PATH = 'desktop/CHANGELOG.md'
 const GH_PROXY = 'https://gh-proxy.com/'
+const DEFAULT_UPDATE_SOURCE = 'gitee'
+
+function getGiteeReleaseAssetsURL(version: string) {
+  return `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download/v${version}/`
+}
+
+function getGithubReleaseAssetsURL(version: string) {
+  return `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${version}/`
+}
 
 const logger = createLogger('update')
 
@@ -45,26 +57,33 @@ marked.use({
   },
 })
 
-function extractChanges(changelogContent: string, userVersion: string): string {
+function extractChanges(
+  changelogContent: string,
+  userVersion: string,
+  targetVersion?: string | null,
+): string {
   const lines = changelogContent.split('\n')
-  const result = []
+  const result: string[] = []
+  let includeSection = false
 
   for (const line of lines) {
     const versionMatch = line.match(/^##\s+v?([0-9]+\.[0-9]+\.[0-9]+)/) // 匹配版本 "## vX.Y.Z" 或 "## X.Y.Z"
 
     if (versionMatch) {
       const versionInLog = versionMatch[1] // X.Y.Z
-      // 遇到小于等于当前版本的就停止
+      // 只展示 (当前版本, 最新版本] 区间，避免误展示更高版本号（如上游残留 changelog）
       if (semver.lte(versionInLog, userVersion)) {
         break
       }
+      includeSection = !targetVersion || semver.lte(versionInLog, targetVersion)
     }
 
-    result.push(line)
+    if (includeSection) {
+      result.push(line)
+    }
   }
 
-  // slice(1) 负责过滤开头的 # Changelog
-  return result.slice(1).join('\n')
+  return result.join('\n').trim()
 }
 
 async function fetchWithRetry(url: string | URL, retries = 3, delay = 1000) {
@@ -109,15 +128,41 @@ function getLatestYmlFileName() {
   return platform() === 'darwin' ? 'latest-mac.yml' : 'latest.yml'
 }
 
-function getLatestYmlCandidateUrls() {
+async function getLatestVersionFromGiteeApi() {
+  const apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/releases/latest`
+  const res = await fetchWithRetry(apiUrl)
+  const data = (await res?.json()) as { tag_name?: string } | undefined
+  const tag = data?.tag_name?.trim()
+  if (!tag) return null
+  return tag.replace(/^v/i, '')
+}
+
+function getLatestYmlCandidateUrls(version?: string | null) {
   const fileName = getLatestYmlFileName()
+  const urls: string[] = []
+  if (version) {
+    urls.push(`${getGiteeReleaseAssetsURL(version)}${fileName}`)
+  }
   const githubUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest/download/${fileName}`
-  return [githubUrl, `${GH_PROXY}${githubUrl}`]
+  urls.push(githubUrl, `${GH_PROXY}${githubUrl}`)
+  return urls
 }
 
 async function getLatestVersion() {
   try {
-    for (const url of getLatestYmlCandidateUrls()) {
+    // 国内优先：Gitee Releases API
+    try {
+      const giteeVersion = await getLatestVersionFromGiteeApi()
+      if (giteeVersion) {
+        latestVersion = giteeVersion
+        logger.debug(`从 Gitee API 获取到的版本为 ${giteeVersion}`)
+        return giteeVersion
+      }
+    } catch {
+      // 回退到 latest.yml
+    }
+
+    for (const url of getLatestYmlCandidateUrls(latestVersion)) {
       try {
         const text = await fetchWithRetry(url).then(res => res?.text())
         if (!text) continue
@@ -131,7 +176,7 @@ async function getLatestVersion() {
         // 尝试下一个候选源
       }
     }
-    logger.error('获取最新版本失败：所有 latest.yml 源均不可用')
+    logger.error('获取最新版本失败：所有更新源均不可用')
     return null
   } catch (error) {
     logger.error('获取最新版本失败', error)
@@ -139,35 +184,78 @@ async function getLatestVersion() {
   }
 }
 
+function getChangelogCandidateUrls() {
+  const rawGitee = `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/main/${CHANGELOG_PATH}`
+  const rawGithub = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/main/${CHANGELOG_PATH}`
+  const jsdelivr = new URL(
+    `${GITHUB_OWNER}/${GITHUB_REPO}@main/${CHANGELOG_PATH}`,
+    CDN_URL,
+  ).toString()
+  return [rawGitee, rawGithub, `${GH_PROXY}${rawGithub}`, jsdelivr]
+}
+
+async function fetchReleaseBody(version: string) {
+  const apiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/v${version}`
+  for (const url of [apiUrl, `${GH_PROXY}${apiUrl}`]) {
+    try {
+      const res = await fetchWithRetry(url)
+      const data = (await res?.json()) as { body?: string } | undefined
+      if (data?.body?.trim()) {
+        return data.body.trim()
+      }
+    } catch {
+      // 尝试下一个候选源
+    }
+  }
+  return undefined
+}
+
 async function fetchChangelog() {
   if (latestVersion && releaseNotes[latestVersion]) {
     return releaseNotes[latestVersion]
   }
   try {
-    // 去 CDN 找（仓库为 monorepo，changelog 在 desktop/ 下）
-    const changelogURL = new URL(
-      `${GITHUB_OWNER}/${GITHUB_REPO}@main/${CHANGELOG_PATH}`,
-      CDN_URL,
-    )
-    const changelogContent = await fetchWithRetry(changelogURL).then(res => res?.text())
-    if (changelogContent) {
-      // 找到新版本到当前版本的所有更新日志
-      const updateLog = extractChanges(changelogContent, app.getVersion())
-      // markdown 转成 html
-      const releaseNote = await marked.parse(updateLog)
-      if (latestVersion) {
-        releaseNotes[latestVersion] = releaseNote
+    const currentVersion = app.getVersion()
+    let updateLog = ''
+
+    for (const url of getChangelogCandidateUrls()) {
+      try {
+        const changelogContent = await fetchWithRetry(url).then(res => res?.text())
+        if (!changelogContent) continue
+        updateLog = extractChanges(changelogContent, currentVersion, latestVersion)
+        if (updateLog) break
+      } catch {
+        // 尝试下一个候选源
       }
-      return releaseNote
     }
+
+    // CHANGELOG 不可用或被错误内容污染时，回退到 GitHub Release 正文
+    if (!updateLog && latestVersion) {
+      updateLog = (await fetchReleaseBody(latestVersion)) || ''
+    }
+
+    if (!updateLog) {
+      return undefined
+    }
+
+    const releaseNote = await marked.parse(updateLog)
+    if (latestVersion) {
+      releaseNotes[latestVersion] = releaseNote
+    }
+    return releaseNote
   } catch {
     return undefined
   }
 }
 
-function getAssetsURL() {
-  const assetsURL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${latestVersion}/`
-  return assetsURL
+function getAssetsURL(source = DEFAULT_UPDATE_SOURCE) {
+  if (!latestVersion) {
+    throw new Error('尚未获取到最新版本号')
+  }
+  if (source === 'gitee') {
+    return getGiteeReleaseAssetsURL(latestVersion)
+  }
+  return getGithubReleaseAssetsURL(latestVersion)
 }
 
 interface Updater {
@@ -179,7 +267,7 @@ interface Updater {
 class UpdateManager {
   constructor(private updater: Updater) {}
 
-  public async checkForUpdates(source = 'github') {
+  public async checkForUpdates(source = DEFAULT_UPDATE_SOURCE) {
     await this.updater.checkForUpdates(source)
   }
 
@@ -190,10 +278,7 @@ class UpdateManager {
     }
     const currentVersion = app.getVersion()
     if (semver.lt(currentVersion, latestVersion)) {
-      // 先用 log 提示更新
-      logger.info(
-        `检查到可用更新：${currentVersion} -> ${latestVersion}，将强制要求用户更新`,
-      )
+      logger.info(`检查到可用更新：${currentVersion} -> ${latestVersion}`)
       const releaseNote = await fetchChangelog()
 
       return {
@@ -241,6 +326,9 @@ class WindowsUpdater implements Updater {
     this.autoUpdater.forceDevUpdateConfig = true
     this.autoUpdater.disableWebInstaller = false
     this.autoUpdater.allowDowngrade = false
+    // 由调用方决定何时 check；发现更新后自动下载，退出时安装
+    this.autoUpdater.autoDownload = true
+    this.autoUpdater.autoInstallOnAppQuit = true
   }
 
   private registerEventListener() {
@@ -292,6 +380,15 @@ class WindowsUpdater implements Updater {
     })
   }
 
+  private async ensureLatestVersion() {
+    if (latestVersion) return latestVersion
+    const version = await getLatestVersion()
+    if (!version) {
+      throw new Error('无法获取最新版本信息，请检查网络或更换更新源')
+    }
+    return version
+  }
+
   private async checkUpdateForGithub() {
     // github 不需要关闭 noCache，requestHeaders 默认就是 null
     this.autoUpdater.requestHeaders = null
@@ -303,6 +400,22 @@ class WindowsUpdater implements Updater {
     return this.autoUpdater.checkForUpdates()
   }
 
+  private async checkUpdateForGitee() {
+    await this.ensureLatestVersion()
+    const assetsURL = getAssetsURL('gitee')
+    this.autoUpdater.setFeedURL({
+      provider: 'generic',
+      url: assetsURL,
+    })
+    try {
+      return await this.autoUpdater.checkForUpdates()
+    } catch (error) {
+      const message = `网络错误: ${errorMessage(error).split('\n')[0]}`
+      const downloadURL = `${assetsURL}${PRODUCT_NAME}_${latestVersion}_windows_x64.exe`
+      windowManager.send(IPC_CHANNELS.updater.updateError, { message, downloadURL })
+    }
+  }
+
   private async checkUpdateForGhProxy(source: string) {
     let sourceURL: URL
     try {
@@ -311,8 +424,9 @@ class WindowsUpdater implements Updater {
       const msg = `更新源设置错误，你的更新源为 ${source}`
       throw new Error(msg)
     }
-    const assetsURL = getAssetsURL()
-    // 自定义更新源
+    await this.ensureLatestVersion()
+    const assetsURL = getAssetsURL('github')
+    // 自定义更新源（多为 GitHub 代理前缀）
     this.autoUpdater.setFeedURL({
       provider: 'generic',
       url: `${sourceURL}${assetsURL}`,
@@ -346,7 +460,9 @@ class WindowsUpdater implements Updater {
       }
       logger.debug(`检查更新中…… (更新源: ${source})`)
 
-      if (source === 'github') {
+      if (source === 'gitee') {
+        await this.checkUpdateForGitee()
+      } else if (source === 'github') {
         await this.checkUpdateForGithub()
       } else {
         await this.checkUpdateForGhProxy(source)
@@ -379,8 +495,12 @@ class MacOSUpdater implements Updater {
   public async checkForUpdates(source: string) {
     // 先从 latest-mac.yml 中获取目标文件
     try {
-      const assetsURL = getAssetsURL()
-      this.safeSource = source === 'github' ? '' : new URL(source).href
+      if (!latestVersion) {
+        await getLatestVersion()
+      }
+      const assetsURL = source === 'gitee' ? getAssetsURL('gitee') : getAssetsURL('github')
+      this.safeSource =
+        source === 'github' || source === 'gitee' ? '' : new URL(source).href
       this.assetsURL = assetsURL
       const latestYmlURL = `${this.safeSource}${new URL('latest-mac.yml', this.assetsURL)}`
       const ymlContent = (await net.fetch(latestYmlURL).then(res => res.text())) as string
