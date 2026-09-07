@@ -133,8 +133,11 @@ export function createAutoPopupTask(
     )
   }
 
-  intervalTask.addStopListener(() => {
-    windowManager.send(IPC_CHANNELS.tasks.autoPopUp.stoppedEvent, account.id)
+  intervalTask.addStopListener((_id, reason) => {
+    windowManager.send(IPC_CHANNELS.tasks.autoPopUp.stoppedEvent, {
+      accountId: account.id,
+      reason,
+    })
   })
 
   return Result.pipe(

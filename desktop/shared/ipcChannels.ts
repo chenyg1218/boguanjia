@@ -5,6 +5,8 @@ export const IPC_CHANNELS = {
       notifyAccountName: 'tasks:liveControl:notifyAccountName',
       disconnect: 'tasks:liveControl:disconnect',
       disconnectedEvent: 'tasks:liveControl:disconnectedEvent',
+      /** 重连后已按意图自动恢复的任务类型列表 */
+      tasksResumedEvent: 'tasks:liveControl:tasksResumedEvent',
     },
     autoMessage: {
       start: 'tasks:autoMessage:start',
@@ -18,6 +20,8 @@ export const IPC_CHANNELS = {
       stop: 'tasks:autoPopUp:stop',
       updateConfig: 'tasks:autoPopUp:updateConfig',
       stoppedEvent: 'tasks:autoPopUp:stoppedEvent',
+      /** 从已连接中控台扫描商品序号 */
+      listGoodsIds: 'tasks:autoPopUp:listGoodsIds',
       registerShortcuts: 'tasks:autoPopup:registerShortcut',
       unregisterShortcuts: 'tasks:autoPopup:unregisterShortcut',
     },

@@ -16,7 +16,7 @@ import { useChromeConfigStore } from './hooks/useChromeConfig'
 import { useIpcListener } from './hooks/useIpc'
 import { useLiveControlStore } from './hooks/useLiveControl'
 import { useToast } from './hooks/useToast'
-import { useUpdateStore } from './hooks/useUpdate'
+import { useUpdateConfigStore, useUpdateStore } from './hooks/useUpdate'
 import './App.css'
 
 function useGlobalIpcListener() {
@@ -26,36 +26,62 @@ function useGlobalIpcListener() {
   const setIsRunningAutoMessage = useAutoMessageStore(s => s.setIsRunning)
   const setIsRunningAutoPopUp = useAutoPopUpStore(s => s.setIsRunning)
   const handleUpdate = useUpdateStore.use.handleUpdate()
+  const handleAutoUpdate = useUpdateStore.use.handleAutoUpdate()
   const { toast } = useToast()
 
   useIpcListener(IPC_CHANNELS.tasks.autoReply.showComment, ({ comment, accountId }) => {
     handleComment(comment, accountId)
   })
 
-  useIpcListener(IPC_CHANNELS.tasks.liveControl.disconnectedEvent, id => {
-    setIsConnected(id, 'disconnected')
-    const name = useAccounts.getState().accounts.find(a => a.id === id)?.name
-    toast.error(
-      name
-        ? `「${name}」直播控制台已断开，可重新连接后继续`
-        : '直播控制台已断开，可重新连接后继续',
+  useIpcListener(IPC_CHANNELS.tasks.liveControl.disconnectedEvent, ({ accountId, reason }) => {
+    setIsConnected(accountId, 'disconnected')
+    setIsRunningAutoMessage(accountId, false)
+    setIsRunningAutoPopUp(accountId, false)
+    setIsListening(accountId, 'stopped')
+    // 异常断连保留自动回复开关：监听恢复后可继续回复
+    if (reason !== 'unexpected') {
+      useAutoReplyStore.getState().setIsRunning(accountId, false)
+    }
+
+    const name = useAccounts.getState().accounts.find(a => a.id === accountId)?.name
+    const prefix = name ? `「${name}」` : ''
+    if (reason === 'license') {
+      toast.error(`${prefix}授权变更，直播控制台已断开`)
+    } else if (reason === 'unexpected') {
+      toast.error(`${prefix}直播控制台异常断开，重新连接后将尝试恢复任务`)
+    } else {
+      toast.error(`${prefix}直播控制台已断开，可重新连接后继续`)
+    }
+  })
+
+  useIpcListener(IPC_CHANNELS.tasks.liveControl.tasksResumedEvent, ({ accountId, tasks }) => {
+    for (const type of tasks) {
+      if (type === 'auto-comment') setIsRunningAutoMessage(accountId, true)
+      if (type === 'auto-popup') setIsRunningAutoPopUp(accountId, true)
+      if (type === 'comment-listener') setIsListening(accountId, 'listening')
+    }
+    const name = useAccounts.getState().accounts.find(a => a.id === accountId)?.name
+    toast.success(
+      name ? `「${name}」已自动恢复 ${tasks.length} 个任务` : `已自动恢复 ${tasks.length} 个任务`,
     )
   })
 
-  useIpcListener(IPC_CHANNELS.tasks.autoMessage.stoppedEvent, id => {
-    setIsRunningAutoMessage(id, false)
-    const name = useAccounts.getState().accounts.find(a => a.id === id)?.name
+  useIpcListener(IPC_CHANNELS.tasks.autoMessage.stoppedEvent, ({ accountId, reason }) => {
+    setIsRunningAutoMessage(accountId, false)
+    if (reason !== 'error') return
+    const name = useAccounts.getState().accounts.find(a => a.id === accountId)?.name
     toast.error(name ? `「${name}」自动发言已停止，可重新启动` : '自动发言已停止，可重新启动')
   })
 
-  useIpcListener(IPC_CHANNELS.tasks.autoPopUp.stoppedEvent, id => {
-    setIsRunningAutoPopUp(id, false)
-    const name = useAccounts.getState().accounts.find(a => a.id === id)?.name
+  useIpcListener(IPC_CHANNELS.tasks.autoPopUp.stoppedEvent, ({ accountId, reason }) => {
+    setIsRunningAutoPopUp(accountId, false)
+    if (reason !== 'error') return
+    const name = useAccounts.getState().accounts.find(a => a.id === accountId)?.name
     toast.error(name ? `「${name}」自动弹窗已停止，可重新启动` : '自动弹窗已停止，可重新启动')
   })
 
-  useIpcListener(IPC_CHANNELS.tasks.autoReply.listenerStopped, id => {
-    setIsListening(id, 'stopped')
+  useIpcListener(IPC_CHANNELS.tasks.autoReply.listenerStopped, ({ accountId }) => {
+    setIsListening(accountId, 'stopped')
   })
 
   useIpcListener(IPC_CHANNELS.chrome.saveState, id => {
@@ -69,9 +95,24 @@ function useGlobalIpcListener() {
     }
   })
 
-  // 强制更新：发现新版本后始终弹窗，不可跳过
+  // 启动检查到更新：按设置决定静默下载或弹窗提示
   useIpcListener(IPC_CHANNELS.app.notifyUpdate, info => {
-    handleUpdate(info)
+    const { notifyEnabled, autoUpdate, getDownloadSource } = useUpdateConfigStore.getState()
+    if (!notifyEnabled && !autoUpdate) {
+      return
+    }
+    if (autoUpdate) {
+      handleAutoUpdate(info, getDownloadSource())
+      if (notifyEnabled) {
+      toast.info(`发现新版本 v${info.latestVersion}，正在后台下载…`, {
+          title: '软件更新',
+        })
+      }
+      return
+    }
+    if (notifyEnabled) {
+      handleUpdate(info)
+    }
   })
 }
 

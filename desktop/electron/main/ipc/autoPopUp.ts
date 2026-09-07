@@ -46,6 +46,25 @@ function setupIpcHandlers() {
     )
   })
 
+  typedIpcMainHandle(IPC_CHANNELS.tasks.autoPopUp.listGoodsIds, async (_, accountId) => {
+    const result = await Result.pipe(
+      assertAccountLicensed(accountId),
+      Result.andThen(() => accountManager.getSession(accountId)),
+      Result.andThen(accountSession => accountSession.listGoodsIds()),
+      Result.inspectError(error => {
+        const logger = createLogger(`@${accountManager.getAccountName(accountId)}`).scope(TASK_NAME)
+        logger.error('读取商品序号失败：', error)
+      }),
+    )
+    if (Result.isSuccess(result)) {
+      return { ok: true as const, goodsIds: result.value }
+    }
+    return {
+      ok: false as const,
+      error: result.error instanceof Error ? result.error.message : '读取商品序号失败',
+    }
+  })
+
   typedIpcMainHandle(IPC_CHANNELS.tasks.autoPopUp.registerShortcuts, (_, accountId, shortcuts) => {
     const logger = createLogger(`@${accountManager.getAccountName(accountId)}`).scope('快捷键弹窗')
     for (const sc of shortcuts) {

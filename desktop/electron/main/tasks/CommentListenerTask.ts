@@ -32,7 +32,10 @@ export function createCommentListenerTask(
       logger.info('开始监听评论')
     } catch (err) {
       // 失败了还要告诉渲染层关闭按钮
-      windowManager.send(IPC_CHANNELS.tasks.autoReply.listenerStopped, account.id)
+      windowManager.send(IPC_CHANNELS.tasks.autoReply.listenerStopped, {
+        accountId: account.id,
+        reason: TaskStopReason.ERROR,
+      })
       task.stop(TaskStopReason.ERROR, err)
     }
   }
@@ -86,6 +89,16 @@ export function createCommentListenerTask(
       },
     },
   )
+
+  task.addStopListener((_id, reason) => {
+    // start 失败时 execute 已发过 ERROR；此处补齐手动/会话停止
+    if (reason !== TaskStopReason.ERROR) {
+      windowManager.send(IPC_CHANNELS.tasks.autoReply.listenerStopped, {
+        accountId: account.id,
+        reason,
+      })
+    }
+  })
 
   return Result.succeed({
     ...task,

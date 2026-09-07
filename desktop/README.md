@@ -37,12 +37,12 @@ pnpm build
 
 也可使用 [Azure Trusted Signing](https://learn.microsoft.com/windows/security/application-security/application-control/app-control-for-business/design/trusted-signing)。签名后仍需一段时间积累下载信誉，EV 证书通常可更快通过。
 
-## M0 / M1 能力
+## 功能
 
 | 模块 | 能力 |
 |------|------|
-| 中控台 | 浏览器检测、有头/无头、连接快手等平台；顶栏任务状态条 |
-| 自动发言 | 变量 `{A/B}`、随机空格、置顶、一键刷屏；快手字数风控提示 |
+| 中控台 | 浏览器检测、有头/无头、连接多平台中控台；顶栏任务状态条 |
+| 自动发言 | 变量 `{A/B}`、随机空格、置顶、一键刷屏；部分平台字数风控提示 |
 | 自动弹窗 | 商品序号、循环次数、页面内快捷键 |
 | 自动回复 | 关键词批量、`{用户名}`、隐藏用户名 |
 | 收费 | 顶栏徽章 + 卡密激活；过期自动收敛多余账号 |

@@ -1,5 +1,7 @@
 import { Result } from '@praha/byethrow'
 import { ErrorFactory } from '@praha/error-factory'
+import type { DisconnectReason, ResumableTaskType } from 'shared/session'
+import { isResumableTaskType } from 'shared/session'
 import { emitter } from '#/event/eventBus'
 import { createLogger } from '#/logger'
 import { AccountSession } from '#/services/AccountSession'
@@ -12,12 +14,16 @@ class AccountNotFoundError extends ErrorFactory({
 export class AccountManager {
   accountSessions: Map<string, AccountSession> = new Map()
   accountNames: Map<string, string> = new Map()
+  /** 跨会话保留：异常断连后仍要恢复的任务意图 */
+  private desiredTasksByAccount = new Map<string, Map<ResumableTaskType, LiveControlTask>>()
   private logger = createLogger('账号管理')
 
   constructor() {
-    emitter.on('page-closed', ({ accountId }) => {
-      this.closeSession(accountId)
-    })
+    const unexpectedClose = ({ accountId }: { accountId: string }) => {
+      this.closeSession(accountId, 'unexpected')
+    }
+    emitter.on('page-closed', unexpectedClose)
+    emitter.on('browser-disconnected', unexpectedClose)
   }
 
   createSession(platformName: LiveControlPlatform, account: Account) {
@@ -25,10 +31,18 @@ export class AccountManager {
     const existSession = this.accountSessions.get(account.id)
     if (existSession) {
       this.logger.warn('检测到已存在建立的连接，将关闭已建立的连接')
-      existSession.disconnect()
+      // 用户主动重新连接：清空旧意图，避免误恢复
+      existSession.disconnect('manual')
+      this.clearDesiredTasks(account.id)
+      this.accountSessions.delete(account.id)
     }
 
-    const accountSession = new AccountSession(platformName, account)
+    const accountSession = new AccountSession(platformName, account, {
+      getDesiredTasks: () => this.getDesiredTasks(account.id),
+      setDesiredTask: task => this.setDesiredTask(account.id, task),
+      deleteDesiredTask: type => this.deleteDesiredTask(account.id, type),
+      clearDesiredTasks: () => this.clearDesiredTasks(account.id),
+    })
     this.accountSessions.set(account.id, accountSession)
     return accountSession
   }
@@ -49,18 +63,46 @@ export class AccountManager {
     return this.accountNames.get(accountId) ?? '未定义账号'
   }
 
-  closeSession(accountId: string) {
+  closeSession(accountId: string, reason: DisconnectReason = 'manual') {
     const accountSession = this.accountSessions.get(accountId)
     if (!accountSession) return
 
-    accountSession.disconnect()
+    accountSession.disconnect(reason)
+    if (reason === 'manual' || reason === 'license') {
+      this.clearDesiredTasks(accountId)
+    }
     this.accountSessions.delete(accountId)
   }
 
   cleanup() {
-    this.accountSessions.values().forEach(session => {
-      session.disconnect()
+    ;[...this.accountSessions.keys()].forEach(id => {
+      this.closeSession(id, 'manual')
     })
+  }
+
+  getDesiredTasks(accountId: string): LiveControlTask[] {
+    return [...(this.desiredTasksByAccount.get(accountId)?.values() ?? [])]
+  }
+
+  setDesiredTask(accountId: string, task: LiveControlTask) {
+    if (!isResumableTaskType(task.type)) return
+    let map = this.desiredTasksByAccount.get(accountId)
+    if (!map) {
+      map = new Map()
+      this.desiredTasksByAccount.set(accountId, map)
+    }
+    map.set(task.type, {
+      type: task.type,
+      config: structuredClone(task.config),
+    } as LiveControlTask)
+  }
+
+  deleteDesiredTask(accountId: string, type: ResumableTaskType) {
+    this.desiredTasksByAccount.get(accountId)?.delete(type)
+  }
+
+  clearDesiredTasks(accountId: string) {
+    this.desiredTasksByAccount.delete(accountId)
   }
 }
 

@@ -8,6 +8,7 @@ import {
   connect,
   ensurePage,
   getAccountName,
+  getAllGoodsIdsFromScroller,
   getItemFromVirtualScroller,
   openUrlByElement,
 } from '../helper'
@@ -43,21 +44,30 @@ export class TaobaoPlatform implements IPlatform, IPerformPopup, IPerformComment
     // 淘宝需要在直播计划中获取到直播间 id，再通过 id 进入中控台
     try {
       const liveIdWrapper = await session.page.waitForSelector(SELECTORS.LIVE_ID, {
-        timeout: 5000,
+        timeout: 15000,
       })
-      const liveId = await liveIdWrapper.textContent()
+      const liveId = (await liveIdWrapper.textContent())?.trim()
+      if (!liveId) {
+        throw new Error('直播间 ID 为空')
+      }
       const liveControlUrl = `${URLS.LIVE_CONTROL_WITH_ID}${liveId}`
-      await session.page.goto(liveControlUrl)
+      await session.page.goto(liveControlUrl, { waitUntil: 'domcontentloaded' })
     } catch {
-      throw new Error('找不到直播间 ID，请确认是否正在直播')
+      throw new Error('找不到直播间 ID，请确认已开播后再连接；可关闭无头模式后重试')
     }
 
-    // 淘宝会弹出莫名其妙的引导界面，按 ESC 关闭
+    // 淘宝会弹出引导遮罩，多次 ESC 关闭
     const driverOverlay = SELECTORS.overlays.DRIVER
-    await page.waitForSelector(driverOverlay, { timeout: 3000 }).catch(() => null)
-    while (await page.$(driverOverlay)) {
+    for (let i = 0; i < 8; i++) {
+      const overlay = await page.$(driverOverlay)
+      if (!overlay) break
       await page.press('body', 'Escape')
-      await sleep(500)
+      await sleep(400)
+    }
+    // 仍可能残留，再尝试点击遮罩外或继续 ESC
+    if (await page.$(driverOverlay)) {
+      await page.keyboard.press('Escape').catch(() => {})
+      await sleep(300)
     }
 
     this.mainPage = page
@@ -132,6 +142,13 @@ export class TaobaoPlatform implements IPlatform, IPerformPopup, IPerformComment
 
   getPopupPage() {
     return this.mainPage
+  }
+
+  async listGoodsIds() {
+    return Result.pipe(
+      ensurePage(this.mainPage),
+      Result.andThen(page => getAllGoodsIdsFromScroller(page, elementFinder)),
+    )
   }
 
   getCommentPage() {

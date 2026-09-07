@@ -3,7 +3,7 @@ import type { Page } from 'playwright'
 import { ElementContentMismatchedError, PageNotFoundError } from '#/errors/PlatformError'
 import type { BrowserSession } from '#/managers/BrowserSessionManager'
 import { sleep } from '#/utils'
-import { comment, connect, ensurePage, getAccountName, getItemFromVirtualScroller } from '../helper'
+import { comment, connect, ensurePage, getAccountName, getAllGoodsIdsFromScroller, getItemFromVirtualScroller } from '../helper'
 import type { ICommentListener, IPerformComment, IPerformPopup, IPlatform } from '../IPlatform'
 import { KuaishouCommentListener } from './commentListener'
 import { REGEXPS, SELECTORS, URLS } from './constant'
@@ -158,6 +158,13 @@ export class KuaishouPlatform
 
   getPopupPage() {
     return this.mainPage
+  }
+
+  async listGoodsIds() {
+    return Result.pipe(
+      ensurePage(this.mainPage),
+      Result.andThen(page => getAllGoodsIdsFromScroller(page, elementFinder)),
+    )
   }
 
   get platformName() {

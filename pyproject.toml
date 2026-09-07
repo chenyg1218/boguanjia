@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "boguanjia"
-version = "1.1.0"
-description = "播管家 — 快手直播跟播辅助"
+version = "1.1.2"
+description = "播管家 — 多平台直播跟播辅助"
 readme = "README.md"
 requires-python = ">=3.8,<3.9"
 dependencies = ["PySide2>=5.15.2", "certifi>=2023.7.22"]

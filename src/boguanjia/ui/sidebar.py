@@ -37,7 +37,7 @@ class SideNav(QWidget):
 
     navigated = Signal(str)  # nav key
 
-    def __init__(self, *, version: str = "1.1.0", parent=None) -> None:
+    def __init__(self, *, version: str = "1.1.2", parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("sideNav")
         self.setFixedWidth(208)

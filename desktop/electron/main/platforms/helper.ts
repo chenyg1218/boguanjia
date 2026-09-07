@@ -234,6 +234,84 @@ export async function getItemFromVirtualScroller(
   )
 }
 
+/**
+ * 滚动采集中控台商品列表中的全部序号（兼容虚拟列表）。
+ * 扫描结束后尽量恢复原滚动位置。
+ */
+export async function getAllGoodsIdsFromScroller(
+  page: Page,
+  elementFinder: IElementFinder,
+  maxScrollPasses = 30,
+): Result.ResultAsync<number[], PlatformError> {
+  const SCROLL_TOLERANCE = 10
+  const seen = new Set<number>()
+
+  async function collectVisible() {
+    const items = await elementFinder.getCurrentGoodsItemsList(page)
+    if (Result.isFailure(items)) return items
+    for (const item of items.value) {
+      const idResult = await elementFinder.getIdFromGoodsItem(item)
+      if (Result.isSuccess(idResult)) seen.add(idResult.value)
+    }
+    return Result.succeed(seen.size)
+  }
+
+  const firstCollect = await collectVisible()
+  if (Result.isFailure(firstCollect) && seen.size === 0) {
+    return firstCollect
+  }
+
+  const scrollContainer = await elementFinder.getGoodsItemsScrollContainer(page)
+  if (Result.isFailure(scrollContainer)) {
+    return seen.size > 0 ? Result.succeed([...seen].sort((a, b) => a - b)) : scrollContainer
+  }
+
+  const originalTop = await scrollContainer.value.evaluate(el => el.scrollTop)
+  try {
+    await scrollContainer.value.evaluate(el => {
+      el.scrollTop = 0
+    })
+    await sleep(300)
+    await collectVisible()
+
+    let lastTop = Number.NaN
+    for (let pass = 0; pass < maxScrollPasses; pass++) {
+      const metrics = await scrollContainer.value.evaluate(el => ({
+        top: el.scrollTop,
+        height: el.scrollHeight,
+        client: el.clientHeight,
+      }))
+      const maxTop = Math.max(metrics.height - metrics.client, 0)
+      if (metrics.top >= maxTop - SCROLL_TOLERANCE) break
+
+      const step = Math.max(Math.floor(metrics.client * 0.8), 160)
+      const nextTop = Math.min(metrics.top + step, maxTop)
+      await scrollContainer.value.evaluate((el, top) => {
+        el.scrollTop = top
+      }, nextTop)
+      await sleep(350)
+      await collectVisible()
+
+      const currentTop = await scrollContainer.value.evaluate(el => el.scrollTop)
+      if (!Number.isNaN(lastTop) && Math.abs(lastTop - currentTop) <= SCROLL_TOLERANCE) {
+        break
+      }
+      lastTop = currentTop
+    }
+  } finally {
+    await scrollContainer.value
+      .evaluate((el, top) => {
+        el.scrollTop = top
+      }, originalTop)
+      .catch(() => {})
+  }
+
+  if (seen.size === 0) {
+    return Result.fail(new ElementNotFoundError({ elementName: '商品列表' }))
+  }
+  return Result.succeed([...seen].sort((a, b) => a - b))
+}
+
 const TOGGLE_BUTTON_MAX_TRY_COUNT = 5
 export async function toggleButton(
   button: ElementHandle<SVGElement | HTMLElement>,

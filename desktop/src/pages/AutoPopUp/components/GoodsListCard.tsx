@@ -1,6 +1,7 @@
 import { useMemoizedFn } from 'ahooks'
-import { ListPlusIcon, PlusIcon } from 'lucide-react'
+import { ListPlusIcon, PlusIcon, RefreshCwIcon } from 'lucide-react'
 import React, { useState } from 'react'
+import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -14,7 +15,9 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useAccounts } from '@/hooks/useAccounts'
 import { useAutoPopUpActions, useCurrentAutoPopUp } from '@/hooks/useAutoPopUp'
+import { useCurrentLiveControl } from '@/hooks/useLiveControl'
 import { useToast } from '@/hooks/useToast'
 import { parseGoodsIdBatch } from '@/utils/goodsIds'
 import GoodsListItem from './GoodsListItem'
@@ -27,6 +30,9 @@ const CommonList = () => {
   const { toast } = useToast()
   const [batchOpen, setBatchOpen] = useState(false)
   const [batchText, setBatchText] = useState('')
+  const [filling, setFilling] = useState(false)
+  const isConnected = useCurrentLiveControl(c => c.isConnected)
+  const account = useAccounts(s => s.getCurrentAccount())
 
   // 合并 goodsItems 和 goodsIds：以 goodsItems 为主，goodsIds 作为兼容
   const items = React.useMemo(() => {
@@ -56,9 +62,7 @@ const CommonList = () => {
 
   const handleRepeatCountChange = useMemoizedFn((index: number, value: number) => {
     const count = Math.max(1, Math.min(Math.floor(value), 10000))
-    const newItems = items.map((item, i) =>
-      i === index ? { ...item, repeatCount: count } : item,
-    )
+    const newItems = items.map((item, i) => (i === index ? { ...item, repeatCount: count } : item))
     syncUpdate(newItems)
   })
 
@@ -70,9 +74,7 @@ const CommonList = () => {
         ? {
             ...item,
             itemInterval:
-              minMs === 0 && maxMs === 0
-                ? undefined
-                : ([minMs, maxMs] as [number, number]),
+              minMs === 0 && maxMs === 0 ? undefined : ([minMs, maxMs] as [number, number]),
           }
         : item,
     )
@@ -83,6 +85,42 @@ const CommonList = () => {
     let id = 1
     while (items.some(item => item.id === id)) id += 1
     syncUpdate([...items, { id, repeatCount: 1, itemInterval: undefined }])
+  })
+
+  const handleFillFromLiveControl = useMemoizedFn(async () => {
+    if (!account) {
+      toast.error('当前账号无效')
+      return
+    }
+    if (isConnected !== 'connected') {
+      toast.error('请先连接直播控制台')
+      return
+    }
+    if (items.length > 0) {
+      toast.error('商品列表非空时不会自动覆盖；请先清空或改用批量添加')
+      return
+    }
+    setFilling(true)
+    try {
+      const result = await window.ipcRenderer.invoke(
+        IPC_CHANNELS.tasks.autoPopUp.listGoodsIds,
+        account.id,
+      )
+      if (!result.ok) {
+        toast.error(result.error || '读取商品序号失败')
+        return
+      }
+      if (result.goodsIds.length === 0) {
+        toast.error('未在中控台读到商品序号，请确认商品列表已加载')
+        return
+      }
+      syncUpdate(result.goodsIds.map(id => ({ id, repeatCount: 1, itemInterval: undefined })))
+      toast.success(`已从中控台填充 ${result.goodsIds.length} 个商品序号`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '读取商品序号失败')
+    } finally {
+      setFilling(false)
+    }
   })
 
   const handleBatchAdd = useMemoizedFn(() => {
@@ -99,10 +137,7 @@ const CommonList = () => {
       return
     }
 
-    syncUpdate([
-      ...items,
-      ...toAdd.map(id => ({ id, repeatCount: 1, itemInterval: undefined })),
-    ])
+    syncUpdate([...items, ...toAdd.map(id => ({ id, repeatCount: 1, itemInterval: undefined }))])
 
     const skipped = parsed.length - toAdd.length
     toast.success(
@@ -116,23 +151,32 @@ const CommonList = () => {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-2">
-        <div className="space-y-1">
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2">
           <Label>商品列表</Label>
-          <p className="text-sm text-muted-foreground">
-            序号 × 循环次数（单品循环）｜单品弹窗间隔（0 = 用全局弹窗间隔）
-          </p>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleFillFromLiveControl}
+              disabled={filling || isConnected !== 'connected'}
+            >
+              <RefreshCwIcon className={`mr-0 h-4 w-4 ${filling ? 'animate-spin' : ''}`} />
+              {filling ? '读取中…' : '自动填充'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setBatchOpen(true)}>
+              <ListPlusIcon className="mr-0 h-4 w-4" />
+              批量添加
+            </Button>
+            <Button variant="outline" size="sm" onClick={addGoodsId}>
+              <PlusIcon className="mr-0 h-4 w-4" />
+              添加商品
+            </Button>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setBatchOpen(true)}>
-            <ListPlusIcon className="mr-2 h-4 w-4" />
-            批量添加
-          </Button>
-          <Button variant="outline" size="sm" onClick={addGoodsId}>
-            <PlusIcon className="mr-2 h-4 w-4" />
-            添加商品
-          </Button>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          序号 × 循环次数｜单品弹窗间隔（0 = 用全局弹窗间隔）
+        </p>
       </div>
 
       <div className="space-y-3">

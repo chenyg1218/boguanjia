@@ -7,6 +7,8 @@ export enum TaskStopReason {
   ERROR = 'error',
   /** 任务被外部调用 stop 停止 */
   MANUAL = 'manual',
+  /** 会话断开导致停止（不视为用户取消意图） */
+  SESSION = 'session',
 }
 
 export type TaskStopCallback = (id: string, reason: TaskStopReason, error?: unknown) => void

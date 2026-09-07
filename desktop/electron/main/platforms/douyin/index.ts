@@ -13,6 +13,7 @@ import {
   connect,
   ensurePage,
   getAccountName,
+  getAllGoodsIdsFromScroller,
   getItemFromVirtualScroller,
   openUrlByElement,
   toggleButton,
@@ -99,6 +100,13 @@ export class DouyinPlatform
 
   getPopupPage() {
     return this.mainPage
+  }
+
+  async listGoodsIds() {
+    return Result.pipe(
+      ensurePage(this.mainPage),
+      Result.andThen(page => getAllGoodsIdsFromScroller(page, elementFinder)),
+    )
   }
 
   getCommentPage() {

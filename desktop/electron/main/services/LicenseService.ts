@@ -461,7 +461,7 @@ export class LicenseService {
     for (const accountId of [...this.sessionIds()]) {
       if (!allowed.has(accountId)) {
         logger.info(`档位上限：关闭多余账号会话 ${accountId}`)
-        accountManager.closeSession(accountId)
+        accountManager.closeSession(accountId, 'license')
       }
     }
   }

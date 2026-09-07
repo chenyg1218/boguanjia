@@ -23,6 +23,8 @@ export interface IPerformPopup {
   performPopup(id: number, signal?: AbortSignal): Result.ResultAsync<void, Error>
   /** 获取弹窗任务所需的页面 */
   getPopupPage(): Page | null
+  /** 从中控台商品列表扫描全部序号（可选；虚拟列表会滚动采集） */
+  listGoodsIds?(): Result.ResultAsync<number[], Error>
 }
 
 export function isPerformPopup(platform: IPlatform): platform is IPlatform & IPerformPopup {

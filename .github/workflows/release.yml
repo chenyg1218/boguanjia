@@ -10,10 +10,18 @@ defaults:
     working-directory: desktop
 
 jobs:
-  release:
+  build:
     permissions:
       contents: write
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -37,24 +45,77 @@ jobs:
         run: pnpm build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 无 Apple 证书时跳过签名，仍可产出可分发的 dmg
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload Windows artifacts
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: |
+            desktop/release/*/*.exe
+            desktop/release/*/*.exe.blockmap
+            desktop/release/*/latest.yml
+          if-no-files-found: error
+
+      - name: Upload macOS artifacts
+        if: matrix.platform == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: |
+            desktop/release/*/*.dmg
+            desktop/release/*/latest-mac.yml
+          if-no-files-found: error
+
+  release:
+    needs: build
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: release-assets
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-release
+          path: release-assets
+
+      - name: Flatten artifacts
+        shell: bash
+        run: |
+          mkdir -p dist-release
+          find release-assets -type f \( -name '*.exe' -o -name '*.exe.blockmap' -o -name 'latest.yml' -o -name '*.dmg' -o -name 'latest-mac.yml' \) -exec cp -v {} dist-release/ \;
+          ls -lah dist-release
 
       - name: Extract changelog
         id: changelog
+        working-directory: desktop
         shell: bash
         run: |
           echo "notes<<EOF" >> "$GITHUB_OUTPUT"
           node scripts/extract-changelog.js >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
-      - name: Create Release and Upload Installer
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
           body: ${{ steps.changelog.outputs.notes }}
-          # 仅上传 Windows 客户端安装包及自动更新元数据
-          files: |
-            desktop/release/*/*.exe
-            desktop/release/*/*.exe.blockmap
-            desktop/release/*/latest.yml
+          files: dist-release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

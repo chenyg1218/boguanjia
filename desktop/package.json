@@ -1,7 +1,7 @@
 {
   "name": "boguanjia",
   "type": "module",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "private": true,
   "description": "播管家 — 多平台直播跟播辅助（外置中控台）",
   "author": "boguanjia",

@@ -6,6 +6,7 @@ import {
   connect,
   ensurePage,
   getAccountName,
+  getAllGoodsIdsFromScroller,
   getItemFromVirtualScroller,
   toggleButton,
 } from '../helper'
@@ -74,6 +75,13 @@ export class DouyinEosPlatform implements IPlatform, IPerformPopup, IPerformComm
 
   getPopupPage() {
     return this.mainPage
+  }
+
+  async listGoodsIds() {
+    return Result.pipe(
+      ensurePage(this.mainPage),
+      Result.andThen(page => getAllGoodsIdsFromScroller(page, elementFinder)),
+    )
   }
 
   getCommentPage() {

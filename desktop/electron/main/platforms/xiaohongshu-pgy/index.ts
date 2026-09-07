@@ -81,6 +81,10 @@ export class XiaohongshuPgyPlatform
     return XiaohongshuPlatform.prototype.performPopup.apply(this, args)
   }
 
+  async listGoodsIds() {
+    return XiaohongshuPlatform.prototype.listGoodsIds!.call(this)
+  }
+
   async performComment(message: string) {
     return XiaohongshuPlatform.prototype.performComment.call(this, message)
   }

@@ -137,8 +137,11 @@ export function createAutoCommentTask(
     )
   }
 
-  intervalTask.addStopListener(() => {
-    windowManager.send(IPC_CHANNELS.tasks.autoMessage.stoppedEvent, account.id)
+  intervalTask.addStopListener((_id, reason) => {
+    windowManager.send(IPC_CHANNELS.tasks.autoMessage.stoppedEvent, {
+      accountId: account.id,
+      reason,
+    })
   })
 
   return Result.pipe(

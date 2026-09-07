@@ -29,7 +29,7 @@ function setupIpcHandlers() {
       } catch (error) {
         const logger = createLogger(`@${account.name}`).scope(TASK_NAME)
         logger.error('连接直播控制台失败：', error)
-        accountManager.closeSession(account.id)
+        accountManager.closeSession(account.id, 'manual')
         return { ok: false, error: friendlyError(error, '连接直播控制台失败，请查看运行日志后重试') }
       }
     },
@@ -37,7 +37,7 @@ function setupIpcHandlers() {
 
   typedIpcMainHandle(IPC_CHANNELS.tasks.liveControl.disconnect, async (_, accountId) => {
     try {
-      accountManager.closeSession(accountId)
+      accountManager.closeSession(accountId, 'manual')
       return { ok: true }
     } catch (error) {
       const logger = createLogger(`@${accountManager.getAccountName(accountId)}`).scope(TASK_NAME)

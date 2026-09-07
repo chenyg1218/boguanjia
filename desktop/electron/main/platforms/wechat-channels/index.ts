@@ -6,6 +6,7 @@ import {
   comment,
   ensurePage,
   getAccountName,
+  getAllGoodsIdsFromScroller,
   getItemFromVirtualScroller,
   toggleButton,
 } from '../helper'
@@ -58,8 +59,7 @@ export class WechatChannelPlatform
 
     // 未开播，跳转到首页了
     if (REGEXPS.INDEX_PAGE.test(page.url())) {
-      // TODO: 此时其实是登录成功的，最好能先保存好登录状态
-      throw new Error('视频号未开播的情况下无法连接到中控台，请先开播')
+      throw new Error('视频号未开播的情况下无法连接到中控台，请先开播后再连接')
     }
 
     const isConnected = !REGEXPS.LOGIN_PAGE.test(session.page.url())
@@ -169,6 +169,13 @@ export class WechatChannelPlatform
 
   getPopupPage() {
     return this.productsPage
+  }
+
+  async listGoodsIds() {
+    return Result.pipe(
+      ensurePage(this.productsPage),
+      Result.andThen(page => getAllGoodsIdsFromScroller(page, elementFinder)),
+    )
   }
 
   getCommentPage() {

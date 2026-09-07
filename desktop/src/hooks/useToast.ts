@@ -175,6 +175,17 @@ const toasty = {
       variant: 'destructive',
       description: message,
     }),
+  info: (
+    message: string,
+    options?: { title?: string; action?: ToastActionElement; duration?: number },
+  ) =>
+    toast({
+      variant: 'default',
+      title: options?.title,
+      description: message,
+      action: options?.action,
+      duration: options?.duration,
+    }),
 }
 
 function useToasts() {

@@ -79,6 +79,10 @@ export class BuyinPlatform
     return await DouyinPlatform.prototype.performPopup.call(this, ...args)
   }
 
+  async listGoodsIds() {
+    return DouyinPlatform.prototype.listGoodsIds!.call(this)
+  }
+
   sendRedPacket(
     ...args: Parameters<ISendRedPacket['sendRedPacket']>
   ): Result.ResultAsync<void, PlatformError> {

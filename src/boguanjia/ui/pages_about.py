@@ -148,10 +148,10 @@ class HelpPage(_InfoPage):
 
 
 class AboutPage(_InfoPage):
-    def __init__(self, *, version: str = "1.1.0", parent=None) -> None:
+    def __init__(self, *, version: str = "1.1.2", parent=None) -> None:
         super().__init__("关于播管家", parent)
         ver = version.lstrip("Vv")
-        lbl = QLabel(f"播管家  V{ver}\n直播跟播辅助工具\n当前平台：快手")
+        lbl = QLabel(f"播管家  V{ver}\n多平台直播跟播辅助")
         lbl.setObjectName("pageSubtitle")
         lbl.setWordWrap(True)
         self.body_layout.addWidget(lbl)

@@ -40,7 +40,7 @@ const GoodsListItem = React.memo(function GoodsListItem({
         placeholder="序号"
         title="商品序号"
       />
-      <span className="text-xs text-muted-foreground whitespace-nowrap">x</span>
+      <span className="text-xs text-muted-foreground whitespace-nowrap">×</span>
       <Input
         type="number"
         value={repeatCount}
@@ -56,9 +56,7 @@ const GoodsListItem = React.memo(function GoodsListItem({
       <Input
         type="number"
         value={intervalMin}
-        onChange={e =>
-          onChangeItemInterval(index, Number(e.target.value) || 0, intervalMax)
-        }
+        onChange={e => onChangeItemInterval(index, Number(e.target.value) || 0, intervalMax)}
         className="w-20"
         min="0"
         max="20000"
@@ -69,9 +67,7 @@ const GoodsListItem = React.memo(function GoodsListItem({
       <Input
         type="number"
         value={intervalMax}
-        onChange={e =>
-          onChangeItemInterval(index, intervalMin, Number(e.target.value) || 0)
-        }
+        onChange={e => onChangeItemInterval(index, intervalMin, Number(e.target.value) || 0)}
         className="w-20"
         min="0"
         max="20000"

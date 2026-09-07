@@ -13,7 +13,14 @@ export interface IpcChannels {
     account: Account
   }) => TaskIpcResult
   [IPC_CHANNELS.tasks.liveControl.disconnect]: (accountId: string) => TaskIpcResult
-  [IPC_CHANNELS.tasks.liveControl.disconnectedEvent]: (id: string) => void
+  [IPC_CHANNELS.tasks.liveControl.disconnectedEvent]: (payload: {
+    accountId: string
+    reason: import('./session').DisconnectReason
+  }) => void
+  [IPC_CHANNELS.tasks.liveControl.tasksResumedEvent]: (payload: {
+    accountId: string
+    tasks: import('./session').ResumableTaskType[]
+  }) => void
   [IPC_CHANNELS.tasks.liveControl.notifyAccountName]: (
     params:
       | {
@@ -30,7 +37,10 @@ export interface IpcChannels {
     config: AutoCommentConfig,
   ) => TaskIpcResult
   [IPC_CHANNELS.tasks.autoMessage.stop]: (accountId: string) => boolean
-  [IPC_CHANNELS.tasks.autoMessage.stoppedEvent]: (id: string) => void
+  [IPC_CHANNELS.tasks.autoMessage.stoppedEvent]: (payload: {
+    accountId: string
+    reason: string
+  }) => void
   [IPC_CHANNELS.tasks.autoMessage.sendBatchMessages]: (
     accountId: string,
     messages: string[],
@@ -47,11 +57,17 @@ export interface IpcChannels {
     config: AutoPopupConfig,
   ) => TaskIpcResult
   [IPC_CHANNELS.tasks.autoPopUp.stop]: (accountId: string) => boolean
-  [IPC_CHANNELS.tasks.autoPopUp.stoppedEvent]: (id: string) => void
+  [IPC_CHANNELS.tasks.autoPopUp.stoppedEvent]: (payload: {
+    accountId: string
+    reason: string
+  }) => void
   [IPC_CHANNELS.tasks.autoPopUp.updateConfig]: (
     accountId: string,
     config: Parital<AutoPopupConfig>,
   ) => void
+  [IPC_CHANNELS.tasks.autoPopUp.listGoodsIds]: (accountId: string) =>
+    | { ok: true; goodsIds: number[] }
+    | { ok: false; error: string }
   [IPC_CHANNELS.tasks.autoPopUp.registerShortcuts]: (
     accountId: string,
     shortcuts: { accelerator: string; goodsIds: number[] }[],
@@ -65,7 +81,10 @@ export interface IpcChannels {
   ) => TaskIpcResult
   [IPC_CHANNELS.tasks.autoReply.stopCommentListener]: (accountId: string) => void
   [IPC_CHANNELS.tasks.autoReply.sendReply]: (accountId: string, replyContent: string) => void
-  [IPC_CHANNELS.tasks.autoReply.listenerStopped]: (accountId: string) => void
+  [IPC_CHANNELS.tasks.autoReply.listenerStopped]: (payload: {
+    accountId: string
+    reason: string
+  }) => void
   [IPC_CHANNELS.tasks.autoReply.showComment]: (data: {
     comment: LiveMessage
     accountId: string

@@ -105,7 +105,7 @@ class AccountsPage(QWidget):
     def set_plan(self, *, is_pro: bool) -> None:
         self._is_pro = is_pro
         if is_pro:
-            self.hint.setText("专业版：可为每个快手小店账号单独打开工作台窗口（同时多开）。")
+            self.hint.setText("专业版：可为每个直播账号单独打开工作台窗口（同时多开）。")
             self.btn_add.setEnabled(True)
             self.btn_add.setToolTip("")
         else:
