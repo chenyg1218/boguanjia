@@ -74,6 +74,9 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
