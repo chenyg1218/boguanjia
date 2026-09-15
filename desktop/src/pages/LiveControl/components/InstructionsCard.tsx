@@ -45,7 +45,7 @@ const InstructionsCard = React.memo(() => {
     <Card>
       <CardHeader>
         <CardTitle>使用说明</CardTitle>
-        <CardDescription>了解如何连接直播中控台并开始跟播</CardDescription>
+        <CardDescription>按下面步骤连上后台，再去开自动发言 / 弹窗 / 回复</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">

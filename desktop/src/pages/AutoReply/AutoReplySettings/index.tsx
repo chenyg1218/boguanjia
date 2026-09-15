@@ -16,7 +16,8 @@ import { BlocklistManager } from './components/BlocklistManager'
 import { HideUsernameSetting } from './components/HideUsernameSetting'
 import { KeywordReplySetting } from './components/KeywordReplySetting'
 import { ListeningSourceSetting } from './components/ListeningSourceSetting'
-import { WebSocketSetting } from './components/WebSocketSetting'
+// v1.2 暂缓：WebSocket 评论转发
+// import { WebSocketSetting } from './components/WebSocketSetting'
 
 export default function AutoReplySettings() {
   const navigate = useNavigate()
@@ -34,8 +35,10 @@ export default function AutoReplySettings() {
 
       <Card>
         <CardHeader>
-          <CardTitle>自动回复设置</CardTitle>
-          <CardDescription>配置评论监听与自动回复</CardDescription>
+          <CardTitle>回复规则</CardTitle>
+          <CardDescription>
+            观众评论里出现你设的词，就自动回公屏。不会回复你自己发的内容。改完会自动保存。
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <ListeningSourceSetting />
@@ -63,11 +66,11 @@ export default function AutoReplySettings() {
 
           <Separator />
           <BlocklistManager />
-          <Separator />
-          <WebSocketSetting />
+          {/* <Separator />
+          <WebSocketSetting /> */}
         </CardContent>
         <CardFooter className="flex justify-between">
-          <p className="text-xs text-muted-foreground">设置会自动保存</p>
+          <p className="text-xs text-muted-foreground">改完会自动保存，不用点保存</p>
           <div className="flex space-x-2">
             <Button variant="outline" onClick={() => navigate(-1)}>
               返回

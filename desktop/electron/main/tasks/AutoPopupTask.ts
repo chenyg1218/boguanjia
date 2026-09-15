@@ -2,7 +2,11 @@ import { Result } from '@praha/byethrow'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { AbortError } from '#/errors/AppError'
 import type { ScopedLogger } from '#/logger'
-import type { IPerformPopup } from '#/platforms/IPlatform'
+import {
+  type IPlatform,
+  isPerformPopup,
+  type IPerformPopup,
+} from '#/platforms/IPlatform'
 import { mergeWithoutArray, randomInt, takeScreenshot } from '#/utils'
 import windowManager from '#/windowManager'
 import { createIntervalTask } from './IntervalTask'
@@ -15,15 +19,10 @@ const retryOptions = {
   retryDelay: 1000,
 }
 
-/**
- * 将 goodsItems 展开为执行序列：每个 item 按 repeatCount 展开
- * 返回 { id, interval } 数组
- */
 function buildExecutionQueue(config: AutoPopupConfig): { id: number; interval: [number, number] }[] {
   const globalInterval = config.scheduler.interval
   const items = config.goodsItems
   if (!items || items.length === 0) {
-    // 兼容旧配置：没有 goodsItems 时用 goodsIds
     return config.goodsIds.map(id => ({ id, interval: globalInterval }))
   }
   const queue: { id: number; interval: [number, number] }[] = []
@@ -40,7 +39,7 @@ function buildExecutionQueue(config: AutoPopupConfig): { id: number; interval: [
 }
 
 export function createAutoPopupTask(
-  platform: IPerformPopup,
+  platform: IPlatform & IPerformPopup,
   taskConfig: AutoPopupConfig,
   account: Account,
   _logger: ScopedLogger,
@@ -64,7 +63,6 @@ export function createAutoPopupTask(
 
   async function execute(signal: AbortSignal) {
     const next = getNext()
-    // 更新当前执行项的间隔
     intervalTask.updateInterval(next.interval)
 
     const result = await runWithRetry(
@@ -126,7 +124,6 @@ export function createAutoPopupTask(
         config = mergedConfig
         queue = buildExecutionQueue(config)
         queueIndex = -1
-        // 更新配置后重新启动任务
         intervalTask.restart()
       }),
       Result.inspectError(err => logger.error('配置更新失败：', err)),
@@ -147,4 +144,20 @@ export function createAutoPopupTask(
       updateConfig,
     })),
   )
+}
+
+/** 单次弹指定商品（关键词触发等） */
+export async function performPopupOnce(
+  platform: IPlatform,
+  goodsId: number,
+  logger: ScopedLogger,
+): Result.ResultAsync<void, Error> {
+  if (!isPerformPopup(platform)) {
+    return Result.fail(new Error('当前平台不支持弹窗'))
+  }
+  const result = await platform.performPopup(goodsId)
+  if (Result.isSuccess(result)) {
+    logger.scope(TASK_NAME).success(`单次弹窗商品 ${goodsId} 成功`)
+  }
+  return result
 }

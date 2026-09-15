@@ -34,6 +34,8 @@ export async function connect(
       }),
       page.waitForSelector(loginConstants.isInLiveControlSelector, {
         timeout: CONNECT_PROBE_TIMEOUT_MS,
+        // 抖店登录后可能出现重复/未完全可见的同名节点，attached 即可判定已进入中控台（对齐 oba #320）
+        state: 'attached',
       }),
     ])
   } catch {
@@ -47,7 +49,149 @@ export async function connect(
 }
 
 export async function getAccountName(page: Page, accountNameSelector: string) {
-  return page.waitForSelector(accountNameSelector).then(el => el.textContent())
+  const name = await page.waitForSelector(accountNameSelector).then(el => el.textContent())
+  return name?.trim() ?? null
+}
+
+const COMMENT_FILL_TIMEOUT_MS = 5000
+const COMMENT_BUTTON_WAIT_MS = 2500
+const COMMENT_SENT_WAIT_MS = 3000
+
+type CommentInput = Awaited<
+  ReturnType<IElementFinder['getCommentTextarea']>
+> extends Result.Result<infer T, unknown>
+  ? T
+  : never
+
+/** 原生方式写入受控 input/textarea（快手等 React 受控框 fill 常不同步） */
+async function nativeSetCommentValue(
+  textarea: CommentInput,
+  message: string,
+) {
+  await (textarea as ElementHandle<HTMLTextAreaElement | HTMLInputElement>).evaluate(
+    (el, value) => {
+      const input = el as HTMLTextAreaElement | HTMLInputElement
+      input.focus()
+      const proto =
+        input instanceof HTMLTextAreaElement
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
+      setter?.call(input, value)
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    },
+    message,
+  )
+}
+
+/** 写入评论框，并尽量同步受控组件状态（避免 fill 后 DOM 有字、React 仍为空） */
+async function fillCommentInput(textarea: CommentInput, message: string) {
+  await textarea.click({ timeout: COMMENT_FILL_TIMEOUT_MS }).catch(() => undefined)
+  await textarea.fill('', { timeout: COMMENT_FILL_TIMEOUT_MS }).catch(() => undefined)
+  await nativeSetCommentValue(textarea, message)
+
+  let current = ''
+  try {
+    current = await textarea.inputValue()
+  } catch {
+    current = ''
+  }
+  if (current === message) return
+
+  await textarea.fill(message, { timeout: COMMENT_FILL_TIMEOUT_MS }).catch(() => undefined)
+  try {
+    current = await textarea.inputValue()
+  } catch {
+    current = ''
+  }
+  if (current === message) {
+    await nativeSetCommentValue(textarea, message)
+    return
+  }
+
+  // 最后用逐字输入，确保键盘事件驱动受控组件
+  await textarea.fill('', { timeout: COMMENT_FILL_TIMEOUT_MS }).catch(() => undefined)
+  if ('pressSequentially' in textarea && typeof textarea.pressSequentially === 'function') {
+    await textarea.pressSequentially(message, { delay: 12 })
+  } else {
+    await textarea.type(message, { delay: 12 })
+  }
+}
+
+async function waitForClickableSubmit(
+  page: Page,
+  elementFinder: IElementFinder,
+  timeoutMs = COMMENT_BUTTON_WAIT_MS,
+) {
+  const deadline = Date.now() + timeoutMs
+  let lastError: PlatformError | null = null
+  while (Date.now() < deadline) {
+    const btn = await elementFinder.getClickableSubmitCommentButton(page)
+    if (Result.isSuccess(btn)) return btn
+    lastError = btn.error
+    await sleep(150)
+  }
+  return Result.fail(
+    lastError ??
+      new ElementNotFoundError({
+        elementName: '提交评论按钮',
+      }),
+  )
+}
+
+/** 发送成功后中控评论框通常会清空；未清空则视为未真正发出 */
+async function waitForCommentInputCleared(
+  page: Page,
+  elementFinder: IElementFinder,
+  timeoutMs = COMMENT_SENT_WAIT_MS,
+) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const textarea = await elementFinder.getCommentTextarea(page)
+    if (Result.isFailure(textarea)) return textarea
+    let value = ''
+    try {
+      value = (await textarea.value.inputValue()).trim()
+    } catch {
+      value = ''
+    }
+    if (value.length === 0) return Result.succeed()
+    await sleep(200)
+  }
+  return Result.fail(
+    new UnexpectedError({
+      description: '评论发送后输入框未清空，公屏可能未真正发出，将重试',
+    }),
+  )
+}
+
+/**
+ * 发送钮优先真实 click（对齐 zhongkongzhushou / 驼铃公屏发送），
+ * 失败再回退 dispatchEvent。讲解弹窗仍用 dispatchEvent，勿混用。
+ */
+async function clickSubmitCommentButton(button: ElementHandle<SVGElement | HTMLElement>) {
+  try {
+    await button.click({ timeout: 5000 })
+  } catch {
+    await button.dispatchEvent('click')
+  }
+}
+
+/** 聚焦评论框后回车发送（快手等中控主路径；reply-content 内 button 可能是快捷回复下拉） */
+async function pressEnterToSubmit(
+  page: Page,
+  elementFinder: IElementFinder,
+) {
+  const ta = await elementFinder.getCommentTextarea(page)
+  if (Result.isFailure(ta)) return ta
+  try {
+    await ta.value.click({ timeout: 2000 })
+  } catch {
+    await ta.value.focus().catch(() => undefined)
+  }
+  await ta.value.press('Enter').catch(() => undefined)
+  return Result.succeed()
 }
 
 export async function comment(
@@ -56,7 +200,7 @@ export async function comment(
   message: string,
   pinTop?: boolean,
 ): Result.ResultAsync<boolean, PlatformError> {
-  async function clickPinTopButton(page: Page): Result.ResultAsync<boolean, PlatformError> {
+  async function clickPinTopButton(): Result.ResultAsync<boolean, PlatformError> {
     return Result.pipe(
       elementFinder.getPinTopLabel(page),
       Result.inspect(label => label.dispatchEvent('click')),
@@ -66,37 +210,46 @@ export async function comment(
     )
   }
 
-  return Result.pipe(
-    // 评论框
-    elementFinder.getCommentTextarea(page),
-    // 填写评论内容
-    Result.inspect(textarea => textarea.fill(message, { timeout: 5000 })),
-    // 点击置顶选项
-    Result.andThen(_ => (pinTop ? clickPinTopButton(page) : Result.succeed(false))),
-    // 发送评论
-    Result.andThrough(_ =>
-      Result.pipe(
-        // 直接点击发送评论按钮
-        elementFinder.getClickableSubmitCommentButton(page),
-        Result.inspect(btn => btn.dispatchEvent('click')),
-        // 下策：尝试直接用 Enter 发送评论
-        Result.orElse(err => {
-          if (err.name === 'ElementNotFoundError') {
-            return Result.pipe(
-              elementFinder.getCommentTextarea(page),
-              Result.andThen(textarea => {
-                return Result.try({
-                  try: () => textarea.press('Enter'),
-                  catch: _ => err,
-                  immediate: true,
-                })
-              }),
-            )
-          }
-          return Result.fail(err)
-        }),
-      ),
-    ),
+  const textareaResult = await elementFinder.getCommentTextarea(page)
+  if (Result.isFailure(textareaResult)) return textareaResult
+
+  try {
+    await fillCommentInput(textareaResult.value, message)
+  } catch (err) {
+    return Result.fail(
+      new UnexpectedError({
+        description: `填写评论失败: ${err instanceof Error ? err.message : String(err)}`,
+      }),
+    )
+  }
+
+  const pinned = pinTop ? await clickPinTopButton() : Result.succeed(false)
+  if (Result.isFailure(pinned)) return pinned
+
+  // 优先点「发送」按钮（快手中控有明确发送钮；回车不一定触发）
+  const submit = await waitForClickableSubmit(page, elementFinder, 2000)
+  if (Result.isSuccess(submit)) {
+    await clickSubmitCommentButton(submit.value)
+    const clearedAfterClick = await waitForCommentInputCleared(page, elementFinder, 2000)
+    if (Result.isSuccess(clearedAfterClick)) return Result.succeed(pinned.value)
+  }
+
+  await pressEnterToSubmit(page, elementFinder)
+  const cleared = await waitForCommentInputCleared(page, elementFinder, 2000)
+  if (Result.isSuccess(cleared)) return Result.succeed(pinned.value)
+
+  // 再点一次发送（填入后按钮可能刚启用）
+  const submitAgain = await waitForClickableSubmit(page, elementFinder, 1500)
+  if (Result.isSuccess(submitAgain)) {
+    await clickSubmitCommentButton(submitAgain.value)
+    const clearedAgain = await waitForCommentInputCleared(page, elementFinder)
+    if (Result.isSuccess(clearedAgain)) return Result.succeed(pinned.value)
+  }
+
+  return Result.fail(
+    new UnexpectedError({
+      description: '评论发送后输入框未清空，公屏可能未真正发出',
+    }),
   )
 }
 

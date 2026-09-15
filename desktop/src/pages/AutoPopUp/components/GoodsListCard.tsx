@@ -175,7 +175,7 @@ const CommonList = () => {
           </div>
         </div>
         <p className="text-sm text-muted-foreground">
-          序号 × 循环次数｜单品弹窗间隔（0 = 用全局弹窗间隔）
+          填中控台商品列表里的序号。循环次数 = 这一轮连续弹几次；间隔填 0 就用下面的全局间隔。
         </p>
       </div>
 

@@ -65,6 +65,19 @@ function setupIpcHandlers() {
     }
   })
 
+  typedIpcMainHandle(IPC_CHANNELS.tasks.autoPopUp.popupOnce, async (_, accountId, goodsId) => {
+    const result = await Result.pipe(
+      assertAccountLicensed(accountId),
+      Result.andThen(() => accountManager.getSession(accountId)),
+      Result.andThen(accountSession => accountSession.popupOnce(goodsId)),
+      Result.inspectError(error => {
+        const logger = createLogger(`@${accountManager.getAccountName(accountId)}`).scope(TASK_NAME)
+        logger.error('单次弹窗失败：', error)
+      }),
+    )
+    return toTaskResult(result)
+  })
+
   typedIpcMainHandle(IPC_CHANNELS.tasks.autoPopUp.registerShortcuts, (_, accountId, shortcuts) => {
     const logger = createLogger(`@${accountManager.getAccountName(accountId)}`).scope('快捷键弹窗')
     for (const sc of shortcuts) {

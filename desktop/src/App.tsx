@@ -17,6 +17,8 @@ import { useIpcListener } from './hooks/useIpc'
 import { useLiveControlStore } from './hooks/useLiveControl'
 import { useToast } from './hooks/useToast'
 import { useUpdateConfigStore, useUpdateStore } from './hooks/useUpdate'
+// v1.2 暂缓：语音读稿播放器
+// import { useVoiceBroadcastPlayer } from './hooks/useVoiceBroadcast'
 import './App.css'
 
 function useGlobalIpcListener() {
@@ -127,6 +129,7 @@ function App() {
   }, [accounts, currentAccountId])
 
   useGlobalIpcListener()
+  // useVoiceBroadcastPlayer()
 
   return (
     <>

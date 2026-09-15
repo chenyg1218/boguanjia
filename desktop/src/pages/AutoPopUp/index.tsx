@@ -36,7 +36,7 @@ export default function AutoPopUp() {
   return (
     <div className="container py-8 space-y-4">
       <div className="flex items-center justify-between">
-        <Title title="自动弹窗" description="配置自动弹出商品的规则" />
+        <Title title="自动弹窗" description="按间隔自动弹出商品，方便观众点链接下单。先填商品序号，再开始任务。" />
         <TaskButton isTaskRunning={isRunning} onStartStop={handleTaskButtonClick} />
       </div>
 

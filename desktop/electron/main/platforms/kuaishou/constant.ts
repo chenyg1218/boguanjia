@@ -31,6 +31,7 @@ export const SELECTORS = {
   commentInput: {
     TEXTAREA: 'div[class^=reply-content] input[type=text]',
     PIN_TOP_LABEL: 'div[class^=reply-content] label',
+    // 含「发送」文案；勿用第一个 button（可能是智能快捷回复）
     SUBMIT_BUTTON: 'div[class^=reply-content] button',
   },
   overlays: {

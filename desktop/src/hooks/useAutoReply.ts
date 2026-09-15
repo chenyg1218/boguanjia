@@ -6,13 +6,21 @@ import { immer } from 'zustand/middleware/immer'
 import { AUTO_REPLY } from '@/constants'
 import { replaceUsername } from '@/utils/autoReplyText'
 import { EVENTS, eventEmitter } from '@/utils/events'
-import { matchKeywordRule } from '@/utils/keywordRules'
+import { matchKeywordRuleWithIndex, type KeywordReplyChannel } from '@/utils/keywordRules'
+import { mergeWithoutArray } from '@/utils/misc'
 import { useAccounts } from './useAccounts'
 import type { ChatMessage } from './useAIChat'
 import { type AIProvider, useAIProvider } from './useAIProvider'
-import { type AutoReplyConfig, useAutoReplyConfig } from './useAutoReplyConfig'
+import {
+  type AutoReplyConfig,
+  createDefaultConfig,
+  useAutoReplyConfig,
+  useAutoReplyConfigStore,
+} from './useAutoReplyConfig'
 import { useErrorHandler } from './useErrorHandler'
-import { useCurrentLiveControl } from './useLiveControl'
+import { useCurrentLiveControl, useLiveControlStore } from './useLiveControl'
+// v1.2 暂缓：语音读稿
+// import { useVoiceBroadcastStore } from './useVoiceBroadcast'
 
 interface ReplyPreview {
   id: string
@@ -57,6 +65,32 @@ const createDefaultContext = (): AutoReplyContext => ({
   replies: [],
   comments: [],
 })
+
+function getConfigForAccount(accountId: string): AutoReplyConfig {
+  return mergeWithoutArray(
+    createDefaultConfig(),
+    useAutoReplyConfigStore.getState().contexts[accountId]?.config ?? {},
+  )
+}
+
+function getHostName(accountId: string): string {
+  return useLiveControlStore.getState().contexts[accountId]?.accountName?.trim() ?? ''
+}
+
+function shouldSkipHostComment(comment: Message, accountId: string, config: AutoReplyConfig) {
+  if ('is_host' in comment && comment.is_host) {
+    return true
+  }
+  const nick = comment.nick_name?.trim() ?? ''
+  const hostName = getHostName(accountId)
+  if (hostName && nick === hostName) {
+    return true
+  }
+  if (nick && config.blockList?.includes(nick)) {
+    return true
+  }
+  return false
+}
 
 export const useAutoReplyStore = create<AutoReplyState & AutoReplyAction>()(
   immer(set => {
@@ -187,47 +221,126 @@ function getRandomElement<T>(arr: T[]): T | undefined {
   return arr[randomIndex]
 }
 
+/** 按账号串行发送回复，避免连发互相覆盖评论框 */
+const replySendQueues = new Map<string, Promise<unknown>>()
+
+function enqueueReplySend<T>(accountId: string, job: () => Promise<T>): Promise<T> {
+  const prev = replySendQueues.get(accountId) ?? Promise.resolve()
+  const next = prev.then(job, job)
+  replySendQueues.set(
+    accountId,
+    next.then(
+      () => undefined,
+      () => undefined,
+    ),
+  )
+  return next
+}
+
 async function sendMessage(
   accountId: string,
   content: string,
   errorHandler: ReturnType<typeof useErrorHandler>['handleError'],
 ): Promise<boolean> {
   if (!content) return false
-  try {
-    await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.autoReply.sendReply, accountId, content)
-    return true
-  } catch (err) {
-    errorHandler(err, '自动发送回复失败，请检查中控台连接与评论框')
-    return false
-  }
+  return enqueueReplySend(accountId, async () => {
+    try {
+      const result = await window.ipcRenderer.invoke(
+        IPC_CHANNELS.tasks.autoReply.sendReply,
+        accountId,
+        content,
+      )
+      if (result && typeof result === 'object' && 'ok' in result && !result.ok) {
+        errorHandler(new Error(result.error), '自动发送回复失败，请检查中控台连接与评论框')
+        return false
+      }
+      return true
+    } catch (err) {
+      errorHandler(err, '自动发送回复失败，请检查中控台连接与评论框')
+      return false
+    }
+  })
+}
+
+/** 规则冷却：accountId:ruleIndex → 到期时间戳 */
+const keywordCooldownUntil = new Map<string, number>()
+
+function isRuleCooling(accountId: string, ruleIndex: number): boolean {
+  const key = `${accountId}:${ruleIndex}`
+  const until = keywordCooldownUntil.get(key) ?? 0
+  return Date.now() < until
+}
+
+function markRuleCooldown(accountId: string, ruleIndex: number, cooldownSec: number) {
+  const sec = Math.max(0, cooldownSec)
+  if (sec <= 0) return
+  keywordCooldownUntil.set(`${accountId}:${ruleIndex}`, Date.now() + sec * 1000)
+}
+
+async function dispatchOutput(
+  accountId: string,
+  text: string,
+  _channel: KeywordReplyChannel,
+  errorHandler: ReturnType<typeof useErrorHandler>['handleError'],
+): Promise<boolean> {
+  // v1.1.3：仅公屏文字；语音通道暂缓
+  if (!text) return false
+  return sendMessage(accountId, text, errorHandler)
+  // if ((channel === 'voice' || channel === 'both') && text) { speakOnce... }
 }
 
 /**
- * 处理关键字回复逻辑
- * @returns boolean - 是否成功匹配并发送了关键字回复
+ * 关键词回复：匹配模式 + 多回复随机（冷却保留；读稿/弹窗三联暂缓）
+ * @returns 是否已处理完毕（冷却中 / 发送成功）。发送失败返回 false，交给 AI 兜底。
  */
-const handleKeywordReply = (
+const handleKeywordTriple = async (
   comment: CommentMessage,
   config: AutoReplyConfig,
   accountId: string,
   errorHandler: ReturnType<typeof useErrorHandler>['handleError'],
-): boolean => {
+): Promise<boolean> => {
   if (!config.comment.keywordReply.enable || !comment.content) {
     return false
   }
 
-  const rule = matchKeywordRule(comment.content, config.comment.keywordReply.rules)
+  const hit = matchKeywordRuleWithIndex(
+    comment.content,
+    config.comment.keywordReply.rules,
+    config.comment.keywordReply.matchMode ?? 'includes',
+  )
+  if (!hit) return false
 
-  if (rule && rule.contents.length > 0) {
-    const content = getRandomElement(rule.contents)
-    if (content) {
-      const message = replaceUsername(content, comment.nick_name, config.hideUsername)
-      sendMessage(accountId, message, errorHandler)
-      // 注意：关键字回复不通过 addReply 添加到界面，直接发送
-      return true // 匹配成功
-    }
+  const { rule, index } = hit
+  // 没有可发文案时不拦截，让 AI 兜底有机会接手
+  if (!rule.contents.length) return false
+
+  const cooldownSec = rule.cooldownSec ?? 8
+  if (isRuleCooling(accountId, index)) {
+    return true
   }
-  return false // 未匹配
+
+  // v1.2 暂缓：关键词弹指定商品
+  // if (rule.goodsId && rule.goodsId > 0) {
+  //   void window.ipcRenderer.invoke(IPC_CHANNELS.tasks.autoPopUp.popupOnce, accountId, rule.goodsId)
+  // }
+
+  const channel: KeywordReplyChannel = 'comment'
+  const raw = getRandomElement(rule.contents)
+  const message = raw
+    ? replaceUsername(raw, comment.nick_name, config.hideUsername)
+    : ''
+
+  if (!message) return false
+
+  useAutoReplyStore.getState().addReply(accountId, comment.msg_id, comment.nick_name, message)
+  const sent = await dispatchOutput(accountId, message, channel, errorHandler)
+  if (sent) {
+    useAutoReplyStore.getState().markReplySent(accountId, comment.msg_id)
+    markRuleCooldown(accountId, index, cooldownSec)
+    return true
+  }
+  // 公屏未真正发出：不占冷却，交由 AI 接管（若已开启）
+  return false
 }
 
 /**
@@ -292,7 +405,8 @@ const handleAIReply = async (
       onReply(replyContent)
       // 自动发送
       if (autoSend) {
-        const sent = await sendMessage(accountId, replyContent, errorHandler)
+        const channel: KeywordReplyChannel = 'comment'
+        const sent = await dispatchOutput(accountId, replyContent, channel, errorHandler)
         if (sent) {
           useAutoReplyStore.getState().markReplySent(accountId, comment.msg_id)
         }
@@ -306,9 +420,10 @@ const handleAIReply = async (
 export function useAutoReply() {
   const store = useAutoReplyStore()
   const { currentAccountId } = useAccounts()
-  const accountName = useCurrentLiveControl(ctx => ctx.accountName)
   const aiStore = useAIProvider('autoReply')
-  const { config } = useAutoReplyConfig()
+  // 保留 hook 订阅，确保配置变更时当前页能刷新；handleComment 内按 accountId 另取
+  useAutoReplyConfig()
+  useCurrentLiveControl(ctx => ctx.accountName)
   const { handleError } = useErrorHandler()
 
   const context = useMemo(() => {
@@ -317,21 +432,18 @@ export function useAutoReply() {
 
   const { isRunning, isListening, comments, replies } = context
 
-  const handleComment = useMemoizedFn((comment: Message, accountId: string) => {
-    // const context = contexts[accountId] || createDefaultContext()
+  const handleComment = useMemoizedFn(async (comment: Message, accountId: string) => {
     const currentContext =
       useAutoReplyStore.getState().contexts[accountId] || createDefaultContext()
     const { isRunning, comments: allComments, replies: allReplies } = currentContext
+    const config = getConfigForAccount(accountId)
 
     store.addComment(accountId, comment)
     if (!isRunning) {
       return
     }
 
-    if (
-      comment.nick_name === accountName ||
-      config.blockList?.includes(comment.nick_name)
-    ) {
+    if (shouldSkipHostComment(comment, accountId, config)) {
       return
     }
 
@@ -344,12 +456,12 @@ export function useAutoReply() {
       return
     }
 
-    const keywordReplied = handleKeywordReply(comment, config, currentAccountId, handleError)
-    if (!keywordReplied && config.comment.aiReply.enable) {
+    const keywordHandled = await handleKeywordTriple(comment, config, accountId, handleError)
+    if (!keywordHandled && config.comment.aiReply.enable) {
       const { provider, model } = aiStore.config
       const apiKey = aiStore.apiKeys[provider]
       const customBaseURL = aiStore.customBaseURL
-      handleAIReply(
+      await handleAIReply(
         accountId,
         comment,
         allComments,

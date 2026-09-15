@@ -68,6 +68,10 @@ export interface IpcChannels {
   [IPC_CHANNELS.tasks.autoPopUp.listGoodsIds]: (accountId: string) =>
     | { ok: true; goodsIds: number[] }
     | { ok: false; error: string }
+  [IPC_CHANNELS.tasks.autoPopUp.popupOnce]: (
+    accountId: string,
+    goodsId: number,
+  ) => TaskIpcResult
   [IPC_CHANNELS.tasks.autoPopUp.registerShortcuts]: (
     accountId: string,
     shortcuts: { accelerator: string; goodsIds: number[] }[],
@@ -80,7 +84,10 @@ export interface IpcChannels {
     config: CommentListenerConfig,
   ) => TaskIpcResult
   [IPC_CHANNELS.tasks.autoReply.stopCommentListener]: (accountId: string) => void
-  [IPC_CHANNELS.tasks.autoReply.sendReply]: (accountId: string, replyContent: string) => void
+  [IPC_CHANNELS.tasks.autoReply.sendReply]: (
+    accountId: string,
+    replyContent: string,
+  ) => TaskIpcResult
   [IPC_CHANNELS.tasks.autoReply.listenerStopped]: (payload: {
     accountId: string
     reason: string
@@ -88,6 +95,104 @@ export interface IpcChannels {
   [IPC_CHANNELS.tasks.autoReply.showComment]: (data: {
     comment: LiveMessage
     accountId: string
+  }) => void
+
+  // VoiceBroadcast（按账号多路；输出设备请分卡以免混音）
+  [IPC_CHANNELS.tasks.voiceBroadcast.start]: (
+    accountId: string,
+    config: {
+      script: string
+      voice: string
+      rate: number
+      volume: number
+      outputDeviceId: string
+      loop: boolean
+      loopMode?: 'sequential' | 'random'
+      lineGapSec?: [number, number]
+      bookLoopGapSec?: number
+      timeAnnounce: {
+        enable: boolean
+        mode: 'fixed' | 'random'
+        intervalSec: [number, number]
+        includeElapsed: boolean
+      }
+    },
+  ) => { ok: true; warning?: string } | { ok: false; error: string }
+  [IPC_CHANNELS.tasks.voiceBroadcast.stop]: (accountId: string) => boolean
+  [IPC_CHANNELS.tasks.voiceBroadcast.pause]: (accountId: string) => boolean
+  [IPC_CHANNELS.tasks.voiceBroadcast.resume]: (accountId: string) => boolean
+  [IPC_CHANNELS.tasks.voiceBroadcast.updateConfig]: (
+    accountId: string,
+    config: Partial<{
+      script: string
+      voice: string
+      rate: number
+      volume: number
+      outputDeviceId: string
+      loop: boolean
+      loopMode: 'sequential' | 'random'
+      lineGapSec: [number, number]
+      bookLoopGapSec: number
+      timeAnnounce: {
+        enable: boolean
+        mode: 'fixed' | 'random'
+        intervalSec: [number, number]
+        includeElapsed: boolean
+      }
+    }>,
+  ) => void
+  [IPC_CHANNELS.tasks.voiceBroadcast.getStatus]: (accountId: string) => {
+    running: boolean
+    paused: boolean
+    accountId: string | null
+    currentLine: string
+    startedAt: number | null
+  }
+  [IPC_CHANNELS.tasks.voiceBroadcast.getAllStatuses]: () => {
+    running: boolean
+    paused: boolean
+    accountId: string | null
+    currentLine: string
+    startedAt: number | null
+  }[]
+  [IPC_CHANNELS.tasks.voiceBroadcast.listVoices]: () => { id: string; label: string }[]
+  [IPC_CHANNELS.tasks.voiceBroadcast.insert]: (
+    accountId: string,
+    text: string,
+    interrupt?: boolean,
+  ) => { ok: true } | { ok: false; error: string }
+  [IPC_CHANNELS.tasks.voiceBroadcast.speakOnce]: (
+    accountId: string,
+    text: string,
+    options?: {
+      interrupt?: boolean
+      config?: Partial<{
+        voice: string
+        rate: number
+        volume: number
+        outputDeviceId: string
+      }>
+    },
+  ) => { ok: true } | { ok: false; error: string }
+  [IPC_CHANNELS.tasks.voiceBroadcast.playAudio]: (payload: {
+    playId: string
+    accountId: string
+    mime: string
+    base64: string
+    volume: number
+    outputDeviceId: string
+  }) => void
+  [IPC_CHANNELS.tasks.voiceBroadcast.playDone]: (playId: string, error?: string) => void
+  [IPC_CHANNELS.tasks.voiceBroadcast.status]: (status: {
+    running: boolean
+    paused: boolean
+    accountId: string | null
+    currentLine: string
+    startedAt: number | null
+  }) => void
+  [IPC_CHANNELS.tasks.voiceBroadcast.stoppedEvent]: (payload: {
+    accountId: string
+    reason: string
   }) => void
 
   // AIChat

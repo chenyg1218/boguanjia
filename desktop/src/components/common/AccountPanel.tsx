@@ -28,6 +28,7 @@ const DEFAULT_COPY_MODULES: CopyAccountConfigModule[] = [
   'autoMessage',
   'autoPopUp',
   'autoReply',
+  // v1.2 暂缓：'voiceBroadcast',
 ]
 
 const OPTIONAL_COPY_MODULES: CopyAccountConfigModule[] = ['chrome']

@@ -136,6 +136,7 @@ export class XiaohongshuCommentListener {
         user_id: data.profile.user_id,
         content: data.comment,
         time: Date.now(),
+        is_host: true,
       }
       this.handleComment(liveMessage)
     }
@@ -156,6 +157,12 @@ export class XiaohongshuCommentListener {
         user_id: commentMessage.profile.user_id,
         content: commentMessage.desc,
         time: commentMessage.current_time,
+        is_host:
+          commentMessage.profile.role === 1 ||
+          Boolean(
+            this.accountName &&
+              commentMessage.profile.nickname.trim() === this.accountName.trim(),
+          ),
       }
       this.handleComment(liveMessage)
     })

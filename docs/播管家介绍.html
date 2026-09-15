@@ -3,25 +3,26 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>播管家 — 多平台直播跟播辅助</title>
-  <meta name="description" content="播管家：多平台外置中控台跟播工具。支持自动发言、自动弹窗、自动回复；基础版 1 账号，专业版 29元/月·3账号，旗舰版 39元/月·无上限。" />
+  <title>播管家 — 带货直播间智能中控</title>
+  <meta name="description" content="播管家：带货直播间的智能中控软件。自动控场、商品自动弹框、自动回复评论、多直播间管理，让直播更加省心省力。" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #07070c;
-      --bg-elev: #101018;
-      --line: rgba(255, 255, 255, 0.08);
-      --text: #f2f4f8;
-      --muted: #9aa3b5;
-      --cyan: #5cf0ff;
-      --violet: #7b6cff;
-      --magenta: #c44dff;
-      --ok: #3dd68c;
-      --grad: linear-gradient(120deg, var(--cyan), var(--violet) 48%, var(--magenta));
-      --radius: 18px;
-      --max: 1080px;
+      --bg: #ffffff;
+      --bg-soft: #f5f6f8;
+      --line: #ebecef;
+      --text: #1f2329;
+      --muted: #646a73;
+      --brand: #5b4dff;
+      --brand-soft: #f0efff;
+      --hot: #ff4d4f;
+      --ok: #16a34a;
+      --grad: linear-gradient(120deg, #5cf0ff, #7b6cff 48%, #c44dff);
+      --radius: 12px;
+      --max: 1100px;
+      --shadow: 0 2px 12px rgba(31, 35, 41, 0.06);
     }
 
     * { box-sizing: border-box; }
@@ -30,15 +31,11 @@
       margin: 0;
       color: var(--text);
       font-family: "Noto Sans SC", "PingFang SC", sans-serif;
-      background:
-        radial-gradient(900px 520px at 12% -10%, rgba(92, 240, 255, 0.16), transparent 55%),
-        radial-gradient(800px 480px at 88% 8%, rgba(196, 77, 255, 0.14), transparent 50%),
-        radial-gradient(700px 500px at 50% 100%, rgba(123, 108, 255, 0.1), transparent 55%),
-        var(--bg);
+      background: var(--bg);
       line-height: 1.65;
     }
 
-    a { color: var(--cyan); text-decoration: none; }
+    a { color: var(--brand); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
     .wrap {
@@ -46,13 +43,12 @@
       margin-inline: auto;
     }
 
-    /* —— Nav —— */
     .nav {
       position: sticky;
       top: 0;
       z-index: 20;
-      backdrop-filter: blur(14px);
-      background: rgba(7, 7, 12, 0.72);
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--line);
     }
     .nav-inner {
@@ -89,72 +85,70 @@
     .nav-links a { color: inherit; }
     .nav-links a:hover { color: var(--text); text-decoration: none; }
 
-    /* —— Hero —— */
+    /* —— Hero：参考图一居中层级 —— */
     .hero {
-      padding: clamp(3.5rem, 8vw, 6.5rem) 0 4rem;
+      padding: clamp(1.5rem, 3.5vw, 2.25rem) 0 clamp(1.35rem, 3vw, 2rem);
       text-align: center;
-    }
-    .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.45rem;
-      padding: 0.35rem 0.85rem;
-      border: 1px solid rgba(92, 240, 255, 0.28);
-      border-radius: 999px;
-      color: var(--cyan);
-      font-size: 0.82rem;
-      letter-spacing: 0.04em;
-      margin-bottom: 1.4rem;
-      opacity: 0;
-      animation: rise 0.7s ease 0.05s forwards;
-    }
-    .hero-logo {
-      width: clamp(96px, 18vw, 128px);
-      height: clamp(96px, 18vw, 128px);
-      border-radius: 28%;
-      margin: 0 auto 1.35rem;
-      box-shadow:
-        0 0 0 1px rgba(255, 255, 255, 0.06),
-        0 20px 60px rgba(123, 108, 255, 0.28);
-      opacity: 0;
-      animation: rise 0.8s ease 0.12s forwards;
+      background: var(--bg);
     }
     .hero h1 {
       margin: 0;
       font-family: Outfit, "Noto Sans SC", sans-serif;
-      font-size: clamp(2.6rem, 7vw, 4.2rem);
+      font-size: clamp(2.8rem, 8vw, 4.4rem);
       font-weight: 800;
+      letter-spacing: 0.08em;
+      color: var(--text);
+      line-height: 1.15;
+      opacity: 0;
+      animation: rise 0.75s ease 0.05s forwards;
+    }
+    .hero .sub {
+      margin: 1.1rem auto 0;
+      font-size: clamp(1.35rem, 3.2vw, 1.85rem);
+      font-weight: 700;
+      color: var(--text);
       letter-spacing: 0.04em;
-      background: var(--grad);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
       opacity: 0;
-      animation: rise 0.8s ease 0.2s forwards;
+      animation: rise 0.75s ease 0.12s forwards;
     }
-    .hero .tagline {
-      margin: 1rem auto 0;
-      max-width: 34rem;
+    .hero .desc {
+      margin: 0.85rem auto 0;
+      max-width: 40rem;
+      font-size: clamp(0.98rem, 2vw, 1.08rem);
       color: var(--muted);
-      font-size: clamp(1.05rem, 2.4vw, 1.2rem);
       opacity: 0;
-      animation: rise 0.8s ease 0.32s forwards;
+      animation: rise 0.75s ease 0.2s forwards;
     }
-    .hero-cta {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 0.75rem;
-      margin-top: 2rem;
+    .hero .platforms {
+      margin: 1.35rem auto 0;
+      font-size: clamp(0.92rem, 1.8vw, 1rem);
+      color: var(--muted);
       opacity: 0;
-      animation: rise 0.8s ease 0.42s forwards;
+      animation: rise 0.75s ease 0.28s forwards;
+    }
+    .hero .promo {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-top: 1.25rem;
+      font-size: 0.95rem;
+      color: var(--text);
+      opacity: 0;
+      animation: rise 0.75s ease 0.36s forwards;
+    }
+    .promo-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--grad);
+      flex-shrink: 0;
     }
     .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: 0.78rem 1.35rem;
-      border-radius: 12px;
+      padding: 0.78rem 1.4rem;
+      border-radius: 10px;
       font-weight: 600;
       font-size: 0.95rem;
       border: 1px solid transparent;
@@ -164,109 +158,153 @@
     }
     .btn:hover { text-decoration: none; transform: translateY(-1px); }
     .btn-primary {
-      color: #07070c;
-      background: var(--grad);
-      box-shadow: 0 10px 28px rgba(92, 240, 255, 0.18);
+      color: #fff;
+      background: linear-gradient(120deg, #7b6cff, #5b4dff);
+      box-shadow: 0 10px 24px rgba(91, 77, 255, 0.25);
     }
     .btn-ghost {
       color: var(--text);
-      background: rgba(255, 255, 255, 0.04);
+      background: #fff;
       border-color: var(--line);
     }
-    .btn-ghost:hover { background: rgba(255, 255, 255, 0.08); }
+    .btn-ghost:hover { background: var(--bg-soft); }
 
-    /* —— Sections —— */
     section {
-      padding: 3.25rem 0;
-      border-top: 1px solid var(--line);
+      padding: 3.25rem 0 3.75rem;
     }
+    .sec-soft { background: var(--bg-soft); }
     .sec-head {
       margin-bottom: 1.75rem;
+      text-align: center;
     }
     .sec-head h2 {
-      margin: 0 0 0.45rem;
-      font-family: Outfit, "Noto Sans SC", sans-serif;
-      font-size: clamp(1.55rem, 3.5vw, 2rem);
+      margin: 0;
+      font-size: clamp(1.55rem, 3.5vw, 1.95rem);
       font-weight: 700;
       letter-spacing: 0.02em;
     }
     .sec-head p {
-      margin: 0;
+      margin: 0.55rem auto 0;
       color: var(--muted);
-      max-width: 40rem;
+      max-width: 36rem;
     }
 
-    .panel {
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 1.35rem 1.4rem;
-    }
-
-    /* Platforms */
-    .plat-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1rem;
-    }
-    .plat-item h3 {
-      margin: 0 0 0.4rem;
-      font-size: 1.05rem;
-    }
-    .plat-item p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 0.95rem;
-    }
-    .plat-item .chip {
-      display: inline-block;
-      margin-top: 0.75rem;
-      padding: 0.2rem 0.55rem;
-      border-radius: 6px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      letter-spacing: 0.03em;
-    }
-    .chip-ok {
-      color: #08351f;
-      background: var(--ok);
-    }
-    .chip-only {
-      color: #071018;
-      background: var(--cyan);
-    }
-
-    /* Features */
-    .feat-table {
-      width: 100%;
-      border-collapse: collapse;
-      overflow: hidden;
-      border-radius: var(--radius);
-      border: 1px solid var(--line);
-      background: var(--bg-elev);
-    }
-    .feat-table th,
-    .feat-table td {
-      padding: 1rem 1.15rem;
-      text-align: left;
-      vertical-align: top;
+    /* —— 各平台功能一览：参考图二 —— */
+    .plat-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.35rem 0.15rem;
       border-bottom: 1px solid var(--line);
+      margin-bottom: 1.5rem;
+      padding-bottom: 0;
     }
-    .feat-table th {
-      width: 8.5rem;
-      color: var(--cyan);
-      font-weight: 700;
-      white-space: nowrap;
-      background: rgba(92, 240, 255, 0.04);
-    }
-    .feat-table tr:last-child th,
-    .feat-table tr:last-child td { border-bottom: none; }
-    .feat-table td { color: var(--muted); }
-    .feat-table td strong { color: var(--text); font-weight: 600; }
-    .feat-note {
-      margin: 1rem 0 0;
+    .plat-tab {
+      appearance: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      min-width: 88px;
+      padding: 0.75rem 0.85rem 0.9rem;
       color: var(--muted);
-      font-size: 0.9rem;
+      font: inherit;
+      font-size: 0.82rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.45rem;
+      position: relative;
+      transition: color 0.15s ease;
+    }
+    .plat-tab:hover { color: var(--text); }
+    .plat-tab.active {
+      color: var(--text);
+      font-weight: 600;
+    }
+    .plat-tab.active::after {
+      content: "";
+      position: absolute;
+      left: 18%;
+      right: 18%;
+      bottom: -1px;
+      height: 3px;
+      border-radius: 3px 3px 0 0;
+      background: var(--brand);
+    }
+    .plat-tab .icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0;
+    }
+    .plat-tab .sub {
+      font-size: 0.7rem;
+      font-weight: 400;
+      color: #9aa0a6;
+      margin-top: -0.2rem;
+    }
+    .icon-dy { background: #111; }
+    .icon-buyin { background: #1a1a1a; }
+    .icon-eos { background: #fe2c55; }
+    .icon-ks { background: #ff4906; }
+    .icon-wx { background: #fa9d3b; }
+    .icon-xhs { background: #ff2442; }
+    .icon-pgy { background: #ff5a6a; }
+    .icon-tb { background: #ff5000; }
+
+    .feat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.85rem;
+    }
+    .feat-card {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1.05rem 1rem;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      min-height: 72px;
+    }
+    .feat-card .fi {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: grid;
+      place-items: center;
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+    .feat-card .label {
+      display: inline-flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .hot {
+      display: inline-block;
+      padding: 0.08rem 0.35rem;
+      border-radius: 4px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #fff;
+      background: var(--hot);
+      line-height: 1.3;
+      vertical-align: middle;
     }
 
     /* Pricing */
@@ -277,17 +315,17 @@
     }
     .price-card {
       position: relative;
-      padding: 1.5rem 1.4rem 1.4rem;
-      border-radius: var(--radius);
+      padding: 1.55rem 1.4rem 1.4rem;
+      border-radius: 16px;
       border: 1px solid var(--line);
-      background: var(--bg-elev);
+      background: #fff;
+      box-shadow: var(--shadow);
     }
     .price-card.pro {
-      border-color: rgba(123, 108, 255, 0.45);
+      border-color: rgba(91, 77, 255, 0.35);
       background:
-        linear-gradient(160deg, rgba(92, 240, 255, 0.08), transparent 42%),
-        linear-gradient(200deg, rgba(196, 77, 255, 0.1), transparent 50%),
-        var(--bg-elev);
+        linear-gradient(180deg, rgba(91, 77, 255, 0.05), transparent 42%),
+        #fff;
     }
     .price-card .rec {
       position: absolute;
@@ -297,26 +335,22 @@
       border-radius: 6px;
       font-size: 0.72rem;
       font-weight: 700;
-      color: #07070c;
-      background: var(--grad);
+      color: #fff;
+      background: linear-gradient(120deg, #7b6cff, #5b4dff);
     }
     .price-card h3 {
       margin: 0 0 0.25rem;
       font-family: Outfit, "Noto Sans SC", sans-serif;
-      font-size: 1.35rem;
+      font-size: 1.3rem;
     }
     .price-card .price {
       margin: 0.85rem 0 1rem;
       font-family: Outfit, "Noto Sans SC", sans-serif;
-      font-size: 1.7rem;
+      font-size: 1.65rem;
       font-weight: 800;
+      color: var(--text);
     }
-    .price-card.pro .price {
-      background: var(--grad);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-    }
+    .price-card.pro .price { color: var(--brand); }
     .price-card ul {
       margin: 0;
       padding: 0;
@@ -338,12 +372,6 @@
       height: 0.55rem;
       border-radius: 50%;
       background: var(--ok);
-      box-shadow: 0 0 10px rgba(61, 214, 140, 0.45);
-    }
-    .price-foot {
-      margin-top: 1.15rem;
-      color: var(--muted);
-      font-size: 0.9rem;
     }
     .price-actions {
       display: flex;
@@ -352,30 +380,13 @@
       margin-top: 1.1rem;
     }
 
-    /* Requirements */
-    .req-list {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-    }
-    .req-list h3 {
-      margin: 0 0 0.55rem;
-      font-size: 1.02rem;
-    }
-    .req-list ul {
-      margin: 0;
-      padding-left: 1.15rem;
-      color: var(--muted);
-    }
-    .req-list li { margin: 0.3rem 0; }
-
-    /* Footer */
     footer {
       border-top: 1px solid var(--line);
       padding: 2rem 0 2.75rem;
       color: var(--muted);
       font-size: 0.88rem;
       text-align: center;
+      background: var(--bg-soft);
     }
     footer .name {
       font-family: Outfit, "Noto Sans SC", sans-serif;
@@ -389,20 +400,14 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
-    @media (max-width: 800px) {
-      .plat-grid,
-      .price-grid,
-      .req-list { grid-template-columns: 1fr; }
-      .feat-table,
-      .feat-table tbody,
-      .feat-table tr,
-      .feat-table th,
-      .feat-table td { display: block; width: 100%; }
-      .feat-table th {
-        padding-bottom: 0.25rem;
-        border-bottom: none;
-      }
-      .feat-table td { padding-top: 0.35rem; }
+    @media (max-width: 960px) {
+      .feat-grid { grid-template-columns: repeat(2, 1fr); }
+      .price-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .feat-grid { grid-template-columns: 1fr; }
+      .plat-tab { min-width: 72px; padding: 0.6rem 0.45rem 0.8rem; font-size: 0.75rem; }
+      .plat-tab .icon { width: 34px; height: 34px; }
       .nav-links { display: none; }
     }
   </style>
@@ -411,147 +416,99 @@
   <header class="nav">
     <div class="wrap nav-inner">
       <a class="brand" href="#top">
-        <svg class="brand-mark" viewBox="0 0 512 512" aria-hidden="true">
-          <defs>
-            <linearGradient id="navNeon" x1="12%" y1="8%" x2="88%" y2="92%">
-              <stop offset="0%" stop-color="#5CF0FF"/>
-              <stop offset="45%" stop-color="#7B6CFF"/>
-              <stop offset="100%" stop-color="#C44DFF"/>
-            </linearGradient>
-            <clipPath id="navApp"><rect width="512" height="512" rx="112"/></clipPath>
-          </defs>
-          <g clip-path="url(#navApp)">
-            <rect width="512" height="512" fill="#000"/>
-            <path fill="url(#navNeon)" d="M256 72C358 72 440 154 440 256C440 358 358 440 256 440C188 440 128 404 94 348L148 314C170 350 210 376 256 376C322 376 376 322 376 256C376 190 322 136 256 136C214 136 178 156 158 188L100 146C132 96 190 72 256 72Z"/>
-            <path fill="url(#navNeon)" d="M214 178L348 256L214 334Z"/>
-          </g>
-        </svg>
+        <img class="brand-mark" src="icon.png" width="34" height="34" alt="播管家" />
         播管家
       </a>
       <nav class="nav-links" aria-label="页面导航">
-        <a href="#platforms">支持平台</a>
-        <a href="#features">功能一览</a>
+        <a href="#overview">功能一览</a>
         <a href="#pricing">收费计划</a>
-        <a href="#requirements">系统要求</a>
       </nav>
     </div>
   </header>
 
   <main id="top">
-    <div class="wrap hero">
-      <div class="hero-badge">多平台 · 外置中控台</div>
-      <svg class="hero-logo" viewBox="0 0 512 512" role="img" aria-label="播管家图标">
-        <defs>
-          <linearGradient id="heroNeon" x1="12%" y1="8%" x2="88%" y2="92%">
-            <stop offset="0%" stop-color="#5CF0FF"/>
-            <stop offset="45%" stop-color="#7B6CFF"/>
-            <stop offset="100%" stop-color="#C44DFF"/>
-          </linearGradient>
-          <filter id="heroGlow" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="blur"/>
-            <feMerge>
-              <feMergeNode in="blur"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
-          <clipPath id="heroApp"><rect width="512" height="512" rx="112"/></clipPath>
-          <path id="cRing" d="M256 72C358 72 440 154 440 256C440 358 358 440 256 440C188 440 128 404 94 348L148 314C170 350 210 376 256 376C322 376 376 322 376 256C376 190 322 136 256 136C214 136 178 156 158 188L100 146C132 96 190 72 256 72Z"/>
-          <path id="play" d="M214 178L348 256L214 334Z"/>
-        </defs>
-        <g clip-path="url(#heroApp)">
-          <rect width="512" height="512" fill="#000"/>
-          <use href="#cRing" fill="url(#heroNeon)" filter="url(#heroGlow)" opacity="0.9"/>
-          <use href="#play" fill="url(#heroNeon)" filter="url(#heroGlow)" opacity="0.75"/>
-          <use href="#cRing" fill="#fff"/>
-          <use href="#play" fill="#fff"/>
-        </g>
-      </svg>
-      <h1>播管家</h1>
-      <p class="tagline">多平台直播跟播辅助。外置中控台连接抖音 / 快手 / 小红书 / 视频号 / 淘宝等，自动发言、弹窗、回复一站搞定。</p>
-      <div class="hero-cta">
-        <a class="btn btn-primary" href="#pricing">查看收费计划</a>
-        <a class="btn btn-ghost" href="#features">功能介绍</a>
+    <div class="hero">
+      <div class="wrap">
+        <h1>播管家</h1>
+        <p class="sub">带货直播间的智能中控</p>
+        <p class="desc">自动控场、商品自动弹框、自动回复评论、多直播间管理<br />直播间提效神器，让直播更加省心省力</p>
+        <p class="platforms">支持平台：抖音小店、巨量百应、抖音团购、快手小店、视频号、小红书千帆 / 蒲公英、淘宝</p>
+        <p class="promo"><span class="promo-dot" aria-hidden="true"></span>基础版免费使用</p>
       </div>
     </div>
 
-    <section id="platforms">
+    <section id="overview" class="sec-soft">
       <div class="wrap">
         <div class="sec-head">
-          <h2>支持平台</h2>
-          <p>覆盖主流直播电商中控台，桌面端运行于 Windows。</p>
+          <h2>各平台功能一览</h2>
         </div>
-        <div class="plat-grid">
-          <article class="panel plat-item">
-            <h3>直播电商平台</h3>
-            <p>支持<strong style="color:var(--text)">抖音小店、巨量百应、抖音团购、小红书千帆、小红书蒲公英、视频号、快手小店、淘宝</strong>。连接后可进行发言、弹窗、评论回复等跟播操作。</p>
-            <span class="chip chip-ok">8 个平台</span>
-          </article>
-          <article class="panel plat-item">
-            <h3>桌面操作系统</h3>
-            <p><strong style="color:var(--text)">Windows 10 / 11（x64）</strong>。通过本机浏览器驱动外置中控台。</p>
-            <span class="chip chip-ok">已支持</span>
-          </article>
-          <article class="panel plat-item">
-            <h3>浏览器依赖</h3>
-            <p>需安装<strong style="color:var(--text)">Google Chrome</strong> 或 <strong style="color:var(--text)">Microsoft Edge</strong>，可自动检测或自定义路径。</p>
-            <span class="chip chip-ok">必需</span>
-          </article>
-        </div>
-      </div>
-    </section>
 
-    <section id="features">
-      <div class="wrap">
-        <div class="sec-head">
-          <h2>功能介绍一览</h2>
-          <p>顶栏账号切换 + 左侧功能列表 + 主区操作 + 底部运行日志。功能点不额外收费，按账号数区分版本。</p>
+        <div class="plat-tabs" role="tablist" aria-label="支持平台">
+          <button type="button" class="plat-tab active" role="tab" aria-selected="true" data-plat="douyin">
+            <span class="icon icon-dy">抖</span>
+            抖音电商
+          </button>
+          <button type="button" class="plat-tab" role="tab" aria-selected="false" data-plat="buyin">
+            <span class="icon icon-buyin">百</span>
+            巨量百应
+          </button>
+          <button type="button" class="plat-tab" role="tab" aria-selected="false" data-plat="eos">
+            <span class="icon icon-eos">团</span>
+            抖音团购
+          </button>
+          <button type="button" class="plat-tab" role="tab" aria-selected="false" data-plat="kuaishou">
+            <span class="icon icon-ks">快</span>
+            快手电商
+          </button>
+          <button type="button" class="plat-tab" role="tab" aria-selected="false" data-plat="wxchannel">
+            <span class="icon icon-wx">视</span>
+            微信视频号
+          </button>
+          <button type="button" class="plat-tab" role="tab" aria-selected="false" data-plat="xiaohongshu">
+            <span class="icon icon-xhs">书</span>
+            小红书
+            <span class="sub">千帆 / 蒲公英</span>
+          </button>
+          <button type="button" class="plat-tab" role="tab" aria-selected="false" data-plat="taobao">
+            <span class="icon icon-tb">淘</span>
+            淘宝
+          </button>
         </div>
-        <table class="feat-table">
-          <tbody>
-            <tr>
-              <th>打开中控台</th>
-              <td>
-                外置浏览器连接所选平台中控台；支持浏览器检测、有头 / 无头模式、扫码登录；顶栏可见任务状态。
-                <br /><strong>首次扫码请关闭无头模式。</strong>
-              </td>
-            </tr>
-            <tr>
-              <th>自动发言</th>
-              <td>
-                定时发送弹幕文案；支持变量 <strong>{宝宝/家人/老铁}</strong>（随机择一）、随机空格、置顶、一键刷屏；部分平台含字数风控提示。
-              </td>
-            </tr>
-            <tr>
-              <th>自动弹窗</th>
-              <td>
-                按小黄车商品序号自动讲解弹窗；支持批量区间（如 <strong>1-100</strong>）、循环次数、单品 / 全局间隔、随机弹窗、组合快捷键切换商品。
-              </td>
-            </tr>
-            <tr>
-              <th>自动回复</th>
-              <td>
-                监听直播间评论；关键词批量规则（如 <strong>音响/音箱|回复A|回复B</strong>）；支持 <strong>{用户名}</strong>、隐藏用户名脱敏；多回复随机选取。
-              </td>
-            </tr>
-            <tr>
-              <th>AI 助手</th>
-              <td>
-                自备 API Key 使用（<strong>不计入卡密费用</strong>）；可在自动回复中开启 AI 回复，关键词规则优先于 AI。
-              </td>
-            </tr>
-            <tr>
-              <th>多账号</th>
-              <td>
-                专业版最多 3 个账号、旗舰版无上限；各账号独立连接与任务配置，支持账号间复制配置。过期后多余账号自动禁用，本地配置保留。
-              </td>
-            </tr>
-            <tr>
-              <th>软件更新</th>
-              <td>默认通过 Gitee Releases 检查并安装更新；亦可切换 GitHub 或代理源。</td>
-            </tr>
-          </tbody>
-        </table>
-        <p class="feat-note">改配置后若任务正在运行：请先停止再开始。掉线需重新连接中控台。</p>
+
+        <div class="feat-grid" id="featGrid" role="tabpanel">
+          <article class="feat-card">
+            <span class="fi">A</span>
+            <span class="label">单商品弹窗 <span class="hot">HOT</span></span>
+          </article>
+          <article class="feat-card">
+            <span class="fi">A</span>
+            <span class="label">多商品循环弹窗</span>
+          </article>
+          <article class="feat-card">
+            <span class="fi">Hi</span>
+            <span class="label">自动控场发言 <span class="hot">HOT</span></span>
+          </article>
+          <article class="feat-card">
+            <span class="fi">···</span>
+            <span class="label">自动发评 <span class="hot">HOT</span></span>
+          </article>
+          <article class="feat-card">
+            <span class="fi">···</span>
+            <span class="label">自动回评</span>
+          </article>
+          <article class="feat-card">
+            <span class="fi">AI</span>
+            <span class="label">AI 智能回复</span>
+          </article>
+          <article class="feat-card">
+            <span class="fi">多</span>
+            <span class="label">多直播间管理 <span class="hot">HOT</span></span>
+          </article>
+          <article class="feat-card">
+            <span class="fi">扫</span>
+            <span class="label">扫码连接中控台</span>
+          </article>
+        </div>
       </div>
     </section>
 
@@ -559,18 +516,21 @@
       <div class="wrap">
         <div class="sec-head">
           <h2>收费计划</h2>
-          <p>各档功能相同（中控台、自动发言、弹窗、回复均可使用），区别只在账号数量与价格。</p>
+          <p>各档功能相同，区别只在账号数量与价格。</p>
         </div>
         <div class="price-grid">
           <article class="price-card">
             <h3>基础版</h3>
-            <p class="price">¥0 · 永久</p>
+            <p class="price">¥0</p>
             <ul>
               <li>1 个账号（默认账号）</li>
               <li>连接中控台</li>
-              <li>自动发言 / 自动弹窗 / 自动回复</li>
+              <li>自动发言 / 自动弹框 / 自动回复</li>
               <li>适合单店试用与日常跟播</li>
             </ul>
+            <div class="price-actions">
+              <a class="btn btn-primary" href="https://gitee.com/codercyg/boguanjia" target="_blank" rel="noopener noreferrer">免费使用</a>
+            </div>
           </article>
           <article class="price-card pro">
             <span class="rec">推荐</span>
@@ -584,7 +544,6 @@
             </ul>
             <div class="price-actions">
               <a class="btn btn-primary" href="https://www.zaofaka.com/links/1CD589E2" target="_blank" rel="noopener noreferrer">购买卡密</a>
-              <a class="btn btn-ghost" href="https://www.kdocs.cn/l/cubWQeCj8bsH" target="_blank" rel="noopener noreferrer">成为代理商 / 联系商家</a>
             </div>
           </article>
           <article class="price-card">
@@ -601,36 +560,6 @@
             </div>
           </article>
         </div>
-        <p class="price-foot">激活入口：软件顶栏版本徽章，或「应用设置 → 收费计划」。离线宽限最多 2 天；付费档过期后自动降为基础版 1 账号。</p>
-      </div>
-    </section>
-
-    <section id="requirements">
-      <div class="wrap">
-        <div class="sec-head">
-          <h2>系统要求</h2>
-          <p>安装与运行前请确认本机环境满足以下条件。</p>
-        </div>
-        <div class="req-list">
-          <article class="panel">
-            <h3>运行环境</h3>
-            <ul>
-              <li>操作系统：Windows 10 / 11（x64）</li>
-              <li>浏览器：本机 Chrome 或 Edge</li>
-              <li>网络：可访问所选平台的直播中控台</li>
-              <li>直播平台账号：对应平台的商家 / 达人身份</li>
-            </ul>
-          </article>
-          <article class="panel">
-            <h3>安装说明</h3>
-            <ul>
-              <li>从官方渠道或商家提供的链接下载安装包</li>
-              <li>若出现 SmartScreen「已保护你的电脑」：点「更多信息 → 仍要运行」（未代码签名提示，非病毒报毒）</li>
-              <li>首次连接中控台：关闭无头模式，约 5 分钟内完成扫码</li>
-              <li>开播并关闭浏览器多余提示弹窗后，再启动发言 / 弹窗 / 回复任务</li>
-            </ul>
-          </article>
-        </div>
       </div>
     </section>
   </main>
@@ -638,15 +567,33 @@
   <footer>
     <div class="wrap">
       <div class="name">播管家</div>
-      <p>多平台直播跟播辅助 · 基于 <a href="https://github.com/qiutongxue/oba-live-tool" target="_blank" rel="noopener noreferrer">oba-live-tool</a> 衍生</p>
+      <p>带货直播间智能中控 · 让直播更加省心省力</p>
       <p style="margin-top:0.5rem">
         <a href="https://gitee.com/codercyg/boguanjia" target="_blank" rel="noopener noreferrer">Gitee</a>
         ·
         <a href="https://github.com/chenyg1218/boguanjia" target="_blank" rel="noopener noreferrer">GitHub</a>
         ·
+        <a href="./播管家介绍.md">介绍文章</a>
+        ·
         <a href="./用户教程.md">用户教程</a>
       </p>
     </div>
   </footer>
+
+  <script>
+    (function () {
+      var tabs = document.querySelectorAll(".plat-tab");
+      tabs.forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          tabs.forEach(function (t) {
+            t.classList.remove("active");
+            t.setAttribute("aria-selected", "false");
+          });
+          tab.classList.add("active");
+          tab.setAttribute("aria-selected", "true");
+        });
+      });
+    })();
+  </script>
 </body>
 </html>

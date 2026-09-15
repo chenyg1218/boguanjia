@@ -34,7 +34,7 @@ export function ListeningSourceSetting() {
 
   const handleSourceChange = (value: ListeningSource) => {
     updateGeneralSettings({ entry: value })
-    toast.success(`已切换至${listeningSourceNameMap[value]}监听`)
+    toast.success(`已改为从「${listeningSourceNameMap[value]}」看评论`)
   }
 
   return (
@@ -45,7 +45,7 @@ export function ListeningSourceSetting() {
         onValueChange={value => handleSourceChange(value as ListeningSource)}
       >
         <SelectTrigger>
-          <SelectValue placeholder="选择监听来源" />
+          <SelectValue placeholder="请选择" />
         </SelectTrigger>
         <SelectContent>
           {(platformListeningSources[platform] ?? []).map(source => (

@@ -18,17 +18,9 @@ export function HideUsernameSetting() {
         <Label htmlFor={hideUserNameId}>隐藏用户名</Label>
       </div>
       <p className="text-xs text-muted-foreground">
-        系统会自动将
+        回复里写
         <span className="font-bold mx-1 bg-muted px-1 rounded-md">{'{用户名}'}</span>
-        替换为实际的用户名称，如果设置隐藏用户名，只会保留用户名的第一个字符。
-        <br />
-        未设置隐藏用户名时：{' '}
-        <span className="font-bold mx-1 bg-muted px-1 rounded-md">{'{用户名}'}</span> {'->'}{' '}
-        <span className="font-bold mx-1 bg-muted px-1 rounded-md">张三</span>
-        <br />
-        设置隐藏用户名时：{' '}
-        <span className="font-bold mx-1 bg-muted px-1 rounded-md">{'{用户名}'}</span> {'->'}{' '}
-        <span className="font-bold mx-1 bg-muted px-1 rounded-md">张***</span>
+        会自动换成对方的名字。打开后只显示第一个字，例如「张三」变成「张***」。
       </p>
     </div>
   )

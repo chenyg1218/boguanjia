@@ -1,9 +1,10 @@
-import { CopyIcon, FileTextIcon, Trash2Icon } from 'lucide-react'
+import { BookOpenIcon, CopyIcon, FileTextIcon, Trash2Icon } from 'lucide-react'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/hooks/useToast'
 import { performFullCleanup } from '@/utils/storage'
+import { openTutorial } from '@/utils/tutorial'
 
 const AUTHOR_WECHAT_ID = 'xiaogangSR'
 
@@ -41,10 +42,28 @@ export function OtherSetting() {
     <Card>
       <CardHeader>
         <CardTitle>其他设置</CardTitle>
-        <CardDescription>更多功能与信息</CardDescription>
+        <CardDescription>教程、联系作者、日志</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <h4 className="text-sm font-medium leading-none">使用教程</h4>
+              <p className="text-sm text-muted-foreground">
+                安装、连接中控台、自动发言 / 弹窗 / 回复等完整说明
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => void openTutorial()}
+            >
+              <BookOpenIcon className="h-4 w-4" />
+              查看教程
+            </Button>
+          </div>
+
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <h4 className="text-sm font-medium leading-none">关于播管家</h4>

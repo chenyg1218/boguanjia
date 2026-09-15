@@ -5,12 +5,13 @@ import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { AbortError } from '#/errors/AppError'
 import type { ScopedLogger } from '#/logger'
 import type { IPerformComment } from '#/platforms/IPlatform'
+import { rememberOutboundComment, forgetOutboundComment } from '#/services/outboundComments'
 import { insertRandomSpaces, randomInt, replaceVariant, takeScreenshot } from '#/utils'
 import windowManager from '#/windowManager'
 import { createIntervalTask } from './IntervalTask'
 import { runWithRetry } from './retry'
 
-const TASK_NAME = '自动评论'
+const TASK_NAME = '自动发言'
 
 const retryOptions = {
   maxRetries: 3,
@@ -103,8 +104,11 @@ export function createAutoCommentTask(
         if (config.extraSpaces) {
           content = insertRandomSpaces(content)
         }
+        // 发送前登记；失败则撤回，避免误伤同文案观众评论
+        rememberOutboundComment(account.id, content)
         const pinTop = await platform.performComment(content, message.pinTop)
         if (Result.isFailure(pinTop)) {
+          forgetOutboundComment(account.id, content)
           return pinTop
         }
         logger.success(`发送${pinTop.value ? '「置顶」' : ''}消息: ${content}`)

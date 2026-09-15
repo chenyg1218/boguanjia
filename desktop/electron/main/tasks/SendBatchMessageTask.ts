@@ -1,5 +1,6 @@
 import { Result } from '@praha/byethrow'
 import type { ScopedLogger } from '#/logger'
+import { rememberOutboundComment, forgetOutboundComment } from '#/services/outboundComments'
 import { insertRandomSpaces, randomInt, replaceVariant, sleep } from '#/utils'
 import type { IPerformComment } from './../platforms/IPlatform'
 import { createTask } from './BaseTask'
@@ -10,6 +11,7 @@ const TASK_NAME = '一键评论'
 export function createSendBatchMessageTask(
   platform: IPerformComment,
   config: SendBatchMessagesConfig,
+  account: Account,
   _logger: ScopedLogger,
 ) {
   const logger = _logger.scope(TASK_NAME)
@@ -27,8 +29,10 @@ export function createSendBatchMessageTask(
           message = insertRandomSpaces(message)
         }
 
+        rememberOutboundComment(account.id, message)
         const result = await platform.performComment(message)
         if (Result.isFailure(result)) {
+          forgetOutboundComment(account.id, message)
           return task.stop(TaskStopReason.ERROR, result.error)
         }
         logger.success(`成功发送第 ${i + 1}/${count} 条评论：${message}`)

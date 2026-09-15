@@ -28,11 +28,13 @@ export const douyinElementFinder: IElementFinder = {
         }),
       )
     }
-    if (
-      (await submit_btn.getAttribute('class'))?.includes(
-        SELECTORS.commentInput.SUBMIT_BUTTON_DISABLED,
-      )
-    ) {
+    const className = (await submit_btn.getAttribute('class')) ?? ''
+    const ariaDisabled = await submit_btn.getAttribute('aria-disabled')
+    const disabled =
+      className.includes(SELECTORS.commentInput.SUBMIT_BUTTON_DISABLED) ||
+      ariaDisabled === 'true' ||
+      (await submit_btn.isDisabled().catch(() => false))
+    if (disabled) {
       return Result.fail(
         new ElementDisabledError({
           elementName: '提交评论按钮',

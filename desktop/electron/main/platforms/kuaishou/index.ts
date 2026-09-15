@@ -3,11 +3,19 @@ import type { Page } from 'playwright'
 import { ElementContentMismatchedError, PageNotFoundError } from '#/errors/PlatformError'
 import type { BrowserSession } from '#/managers/BrowserSessionManager'
 import { sleep } from '#/utils'
-import { comment, connect, ensurePage, getAccountName, getAllGoodsIdsFromScroller, getItemFromVirtualScroller } from '../helper'
+import {
+  comment,
+  connect,
+  ensurePage,
+  getAccountName,
+  getAllGoodsIdsFromScroller,
+  getItemFromVirtualScroller,
+} from '../helper'
 import type { ICommentListener, IPerformComment, IPerformPopup, IPlatform } from '../IPlatform'
 import { KuaishouCommentListener } from './commentListener'
 import { REGEXPS, SELECTORS, URLS } from './constant'
 import { kuaishouElementFinder as elementFinder } from './element-finder'
+import { dismissKuaishouModals, dismissKuaishouModalsUntilGone } from './overlays'
 
 const PLATFORM_NAME = '快手小店' as const
 
@@ -39,6 +47,8 @@ export class KuaishouPlatform
         await sleep(1000)
         popover = await page.$(SELECTORS.DRIVER_POPOVER)
       }
+      // 进中控台时可能已有团购引导 / 残留开播提示
+      await dismissKuaishouModalsUntilGone(page, 2000)
       this.mainPage = page
     }
 
@@ -69,10 +79,11 @@ export class KuaishouPlatform
   }
 
   async performComment(message: string, pinTop?: boolean) {
-    return Result.pipe(
-      ensurePage(this.mainPage),
-      Result.andThen(page => comment(page, elementFinder, message, pinTop)),
-    )
+    const pageResult = ensurePage(this.mainPage)
+    if (Result.isFailure(pageResult)) return pageResult
+    // 开播提示 / 讲解确认会挡住评论框，发送前先点掉
+    await dismissKuaishouModalsUntilGone(pageResult.value, 2500)
+    return comment(pageResult.value, elementFinder, message, pinTop)
   }
 
   getCommentPage() {
@@ -83,6 +94,9 @@ export class KuaishouPlatform
     if (!this.mainPage) {
       return Result.fail(new PageNotFoundError())
     }
+    // 开播提示挡着点不了「开始讲解」
+    await dismissKuaishouModalsUntilGone(this.mainPage, 2000)
+
     const item = await getItemFromVirtualScroller(this.mainPage, elementFinder, id)
     if (Result.isFailure(item)) {
       return item
@@ -101,22 +115,12 @@ export class KuaishouPlatform
       )
     }
     await button.value.dispatchEvent('click')
-    // 判断是否会出现 modal
-    const modalNextButton = await this.mainPage
-      .waitForSelector(SELECTORS.goodsItem.POPUP_CONFIRM_BUTTON, {
-        timeout: 500,
-      })
-      .catch(() => null)
-    // 出现了就点击“确定”
-    if (modalNextButton) {
-      await modalNextButton.dispatchEvent('click')
-    }
+    // 「确定结束当前讲解？」「确认开始新的讲解么?」
+    await dismissKuaishouModalsUntilGone(this.mainPage, 3500, { preferPopupConfirm: true })
 
     // 结束讲解 - 需要再次开始讲解
     if (buttonText === '结束讲解') {
-      // 为了以防万一等待一段时间
       await sleep(100)
-      // 注意：此时无法使用原先的按钮，需要重新查找
       const newButton = await elementFinder.getPopUpButtonFromGoodsItem(item.value)
       if (Result.isFailure(newButton)) {
         return newButton
@@ -130,7 +134,8 @@ export class KuaishouPlatform
           }),
         )
       }
-      newButton.value.dispatchEvent('click')
+      await newButton.value.dispatchEvent('click')
+      await dismissKuaishouModalsUntilGone(this.mainPage, 3500, { preferPopupConfirm: true })
     }
     return Result.succeed()
   }

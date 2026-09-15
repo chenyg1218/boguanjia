@@ -5,22 +5,44 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useAutoReplyConfig } from '@/hooks/useAutoReplyConfig'
 import { useToast } from '@/hooks/useToast'
 import {
   type KeywordRule as Rule,
+  normalizeKeywordRule,
   parseKeywordBatchText,
   serializeKeywordRules,
 } from '@/utils/keywordRules'
 
+const emptyRule = (): Rule =>
+  normalizeKeywordRule({
+    keywords: [],
+    contents: [],
+    channel: 'comment',
+    cooldownSec: 8,
+  })
+
 export function KeywordReplySetting() {
-  const { config, updateKeywordRules, updateKeywordReplyEnabled } = useAutoReplyConfig()
+  const {
+    config,
+    updateKeywordRules,
+    updateKeywordReplyEnabled,
+    updateKeywordMatchMode,
+  } = useAutoReplyConfig()
   const rules = config.comment.keywordReply.rules
+  const matchMode = config.comment.keywordReply.matchMode ?? 'includes'
   const [showEditor, setShowEditor] = useState(false)
 
   const saveRules = useMemoizedFn((rulesToSave = rules) => {
-    updateKeywordRules(rulesToSave)
+    updateKeywordRules(rulesToSave.map(normalizeKeywordRule))
   })
 
   const keywordReplyEnabled = config.comment.keywordReply.enable
@@ -29,7 +51,7 @@ export function KeywordReplySetting() {
   }
 
   const addRule = () => {
-    saveRules([...rules, { keywords: [], contents: [] }])
+    saveRules([...rules, emptyRule()])
   }
 
   const keywordReplyId = useId()
@@ -59,11 +81,32 @@ export function KeywordReplySetting() {
             </div>
           </div>
 
+          <div className="space-y-2 max-w-md">
+            <Label>匹配模式</Label>
+            <Select
+              value={matchMode}
+              onValueChange={v => updateKeywordMatchMode(v as 'includes' | 'exact')}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="includes">包含匹配</SelectItem>
+                <SelectItem value="exact">全匹配</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {matchMode === 'exact'
+                ? '只有评论和关键词完全一样才回复。适合「多少钱」「有货吗」这种短评，避免误回。'
+                : '评论里只要出现关键词就会回复。例如关键词是「多少钱」，「这个多少钱」也会触发。'}
+            </p>
+          </div>
+
           {showEditor ? (
             <KeywordReplyEditor
               rules={rules}
-              onSave={rules => {
-                updateKeywordRules(rules)
+              onSave={next => {
+                updateKeywordRules(next)
               }}
             />
           ) : (
@@ -82,6 +125,14 @@ function CommonKeywordManager({
   rules: Rule[]
   saveRules: (rules: Rule[]) => void
 }) {
+  const updateRule = useMemoizedFn((ruleIndex: number, patch: Partial<Rule>) => {
+    saveRules(
+      rules.map((rule, index) =>
+        index === ruleIndex ? normalizeKeywordRule({ ...rule, ...patch }) : rule,
+      ),
+    )
+  })
+
   const updateRuleNestedArray = useMemoizedFn(
     (
       ruleIndex: number,
@@ -90,24 +141,20 @@ function CommonKeywordManager({
     ) => {
       const newRules = rules.map((rule, index) => {
         if (index === ruleIndex) {
-          const currentArray = rule[key]
-          const newArray = updateFn(currentArray)
-          return {
+          return normalizeKeywordRule({
             ...rule,
-            [key]: newArray,
-          }
+            [key]: updateFn(rule[key]),
+          })
         }
         return rule
       })
-
       saveRules(newRules)
     },
   )
 
   const removeRule = useCallback(
     (index: number) => {
-      const newRules = rules.filter((_, i) => i !== index)
-      saveRules(newRules)
+      saveRules(rules.filter((_, i) => i !== index))
     },
     [rules, saveRules],
   )
@@ -156,7 +203,7 @@ function CommonKeywordManager({
 
   return rules.length === 0 ? (
     <div className="text-center py-8 border rounded-md bg-muted/30">
-      <p className="text-muted-foreground">暂无规则，请点击"添加规则"创建</p>
+      <p className="text-muted-foreground">还没有规则，点右上角「添加规则」</p>
     </div>
   ) : (
     <div className="space-y-4">
@@ -195,7 +242,7 @@ function CommonKeywordManager({
 
               <div className="flex gap-2">
                 <Input
-                  placeholder="输入关键词..."
+                  placeholder="例如：多少钱"
                   className="flex-1"
                   onKeyDown={e => {
                     if (e.key === 'Enter') {
@@ -218,19 +265,24 @@ function CommonKeywordManager({
             </div>
 
             <div>
-              <h4 className="text-sm font-medium mb-2">回复内容</h4>
+              <h4 className="text-sm font-medium mb-1">
+                回复内容（可用 {'{用户名}'}）
+              </h4>
+              <p className="text-xs text-muted-foreground mb-2">
+                可以写好几句，每次随机发一句到公屏，看起来不那么机械。
+              </p>
               <div className="space-y-2 mb-2">
                 {rule.contents.map((content, contentIndex) => (
                   <div
                     // biome-ignore lint/suspicious/noArrayIndexKey: 下标无妨
                     key={contentIndex}
-                    className="bg-muted p-2 rounded-md text-sm flex items-start justify-between group"
+                    className="bg-muted p-2 rounded-md text-sm flex items-start justify-between gap-2"
                   >
-                    <div>{content}</div>
+                    <div className="flex-1 min-w-0 break-words">{content}</div>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="h-6 w-6 shrink-0"
                       onClick={() => removeContent(ruleIndex, contentIndex)}
                     >
                       <X className="h-3 w-3" />
@@ -241,7 +293,7 @@ function CommonKeywordManager({
 
               <div className="flex gap-2">
                 <Input
-                  placeholder="输入回复内容..."
+                  placeholder="例如：亲看2号链接~"
                   className="flex-1"
                   onKeyDown={e => {
                     if (e.key === 'Enter') {
@@ -262,6 +314,25 @@ function CommonKeywordManager({
                 </Button>
               </div>
             </div>
+
+            <div className="space-y-2 max-w-[200px]">
+              <Label>触发间隔（秒）</Label>
+              <Input
+                type="number"
+                min={0}
+                value={rule.cooldownSec ?? 8}
+                onChange={e => {
+                  const n = Number(e.target.value)
+                  updateRule(ruleIndex, {
+                    cooldownSec: Number.isFinite(n) && n >= 0 ? n : 8,
+                  })
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                防止同一句话回得太勤。例如填 8，就是至少隔 8 秒才再回一次。
+              </p>
+            </div>
+            {/* v1.2 暂缓：本规则通道 / 弹窗商品序号 */}
           </CardContent>
         </Card>
       ))}
@@ -287,7 +358,6 @@ function KeywordReplyEditor({ rules, onSave }: { rules: Rule[]; onSave: (rules: 
       toast.success('保存成功')
     } catch (e) {
       if (e instanceof Error) {
-        // 格式错误
         toast.error(e.message)
       } else {
         toast.error(String(e))
@@ -304,13 +374,14 @@ function KeywordReplyEditor({ rules, onSave }: { rules: Rule[]; onSave: (rules: 
       <div className="flex justify-between">
         <div>
           <div className="text-sm">批量编辑</div>
-          <div className="text-muted-foreground text-xs mt-1">
+          <div className="text-muted-foreground text-xs mt-1 space-y-1">
             <p>
-              使用 <kbd>|</kbd> 分隔关键字和回复内容， 使用 <kbd>/</kbd> 分隔多个关键字， 使用{' '}
-              <kbd>|</kbd> 分隔多个回复内容
+              一行一条规则。先写关键词（多个用 / 分开），再用 | 接要回的话（多句也用 | 分开）。
             </p>
-            <p className="pl-4">如：关键字A/关键字B/关键字C|回复内容a|回复内容b|回复内容c</p>
-            <p>每一行对应一条规则，每条回复内容不得超过50个字符</p>
+            <p>
+              末尾可加 <kbd>#cd:8</kbd> 表示至少隔 8 秒再回一次。
+            </p>
+            <p>例：多少钱/啥价|{'{用户名}'} 看2号链接|稍等亲|#cd:8</p>
           </div>
         </div>
         <Button className="self-end" onClick={handleSaveBtnClick} disabled={!hasChanges}>

@@ -8,7 +8,7 @@ export function TaskRestartHint({ visible }: { visible: boolean }) {
     <Alert>
       <AlertCircle className="h-4 w-4" />
       <AlertDescription>
-        任务运行中。若刚改过列表或间隔等配置，请先<strong>停止</strong>再<strong>开始</strong>，新配置才会生效。
+        正在运行。如果刚改过内容或间隔，请先点「停止任务」再点「开始任务」，新设置才会生效。
       </AlertDescription>
     </Alert>
   )

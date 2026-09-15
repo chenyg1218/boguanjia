@@ -44,6 +44,7 @@ export class DouyinPlatform
 
   public mainPage: Page | null = null
   private commentListener: ICommentListener | null = null
+  private accountName = ''
 
   async connect(browserSession: BrowserSession) {
     const { page } = browserSession
@@ -54,6 +55,8 @@ export class DouyinPlatform
     })
     if (isConnected) {
       this.mainPage = page
+      // 抖店直连进中控台时会出现两套相同 DOM，导致评论框/按钮定位失败；刷新一次恢复（对齐 oba #322）
+      await page.reload({ waitUntil: 'load' })
     }
     return isConnected
   }
@@ -73,7 +76,13 @@ export class DouyinPlatform
 
   async getAccountName(session: BrowserSession) {
     const accountName = await getAccountName(session.page, SELECTORS.ACCOUNT_NAME)
-    return accountName ?? ''
+    this.accountName = accountName ?? ''
+    const listener = this.commentListener as
+      | ControlListener
+      | CompassListener
+      | null
+    listener?.setHostAccountName?.(this.accountName)
+    return this.accountName
   }
 
   disconnect(): Promise<void> {
@@ -94,6 +103,13 @@ export class DouyinPlatform
   async performComment(message: string, pinTop: boolean) {
     return Result.pipe(
       ensurePage(this.mainPage),
+      Result.inspect(async page => {
+        // 长时间未操作等遮罩会挡住评论发送，先尝试关闭
+        for (const selector of Object.values(SELECTORS.overlays)) {
+          const el = await page.$(selector)
+          if (el) await el.dispatchEvent('click').catch(() => undefined)
+        }
+      }),
       Result.andThen(page => comment(page, elementFinder, message, pinTop)),
     )
   }
@@ -118,9 +134,13 @@ export class DouyinPlatform
       ensurePage(this.mainPage),
       Result.map(page => {
         if (source === 'control') {
-          this.commentListener = new ControlListener(page)
+          const listener = new ControlListener(page)
+          listener.setHostAccountName(this.accountName)
+          this.commentListener = listener
         } else {
-          this.commentListener = new CompassListener('douyin', page)
+          const listener = new CompassListener('douyin', page)
+          listener.setHostAccountName(this.accountName)
+          this.commentListener = listener
         }
         return this.commentListener.startCommentListener(onComment, source)
       }),

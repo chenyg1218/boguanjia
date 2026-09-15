@@ -34,7 +34,7 @@ export default function AutoMessage() {
   return (
     <div className="container py-8 space-y-4">
       <div className="flex items-center justify-between">
-        <Title title="自动发言" description="配置自动发送消息的规则" />
+        <Title title="自动发言" description="按间隔自动在公屏发话术。先写好内容，再点右上角「开始任务」。" />
         <TaskButton isTaskRunning={isRunning} onStartStop={handleTaskButtonClick} />
       </div>
 

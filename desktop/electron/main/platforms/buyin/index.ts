@@ -30,6 +30,7 @@ export class BuyinPlatform
 
   private mainPage: Page | null = null
   private commentListener: ICommentListener | null = null
+  private accountName = ''
 
   get platformName() {
     return PLATFORM_NAME
@@ -68,7 +69,13 @@ export class BuyinPlatform
   async getAccountName(session: BrowserSession) {
     await session.page.waitForSelector(SELECTORS.ACCOUNT_NAME)
     const accountName = await session.page.$(SELECTORS.ACCOUNT_NAME).then(el => el?.textContent())
-    return accountName ?? ''
+    this.accountName = accountName?.trim() ?? ''
+    const listener = this.commentListener as
+      | ControlListener
+      | CompassListener
+      | null
+    listener?.setHostAccountName?.(this.accountName)
+    return this.accountName
   }
 
   disconnect(): Promise<void> {
@@ -104,9 +111,13 @@ export class BuyinPlatform
     }
     const page = pageResult.value
     if (source === 'control') {
-      this.commentListener = new ControlListener(page)
+      const listener = new ControlListener(page)
+      listener.setHostAccountName(this.accountName)
+      this.commentListener = listener
     } else {
-      this.commentListener = new CompassListener('buyin', page)
+      const listener = new CompassListener('buyin', page)
+      listener.setHostAccountName(this.accountName)
+      this.commentListener = listener
     }
     return this.commentListener.startCommentListener(onComment, source)
   }

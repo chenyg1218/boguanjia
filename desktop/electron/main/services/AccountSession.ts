@@ -1,7 +1,7 @@
 import { Result } from '@praha/byethrow'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { type DisconnectReason, isResumableTaskType, type ResumableTaskType } from 'shared/session'
-import { TaskNotSupportedError } from '#/errors/AppError'
+import { TaskNotSupportedError, UnexpectedError } from '#/errors/AppError'
 import { emitter } from '#/event/eventBus'
 import { createLogger } from '#/logger'
 import {
@@ -16,9 +16,14 @@ import {
   isPerformComment,
   isPerformPopup,
 } from '#/platforms/IPlatform'
+import {
+  clearOutboundComments,
+  forgetOutboundComment,
+  rememberOutboundComment,
+} from '#/services/outboundComments'
 import { sessionStateStore } from '#/services/SessionStateStore'
 import { createAutoCommentTask } from '#/tasks/AutoCommentTask'
-import { createAutoPopupTask } from '#/tasks/AutoPopupTask'
+import { createAutoPopupTask, performPopupOnce } from '#/tasks/AutoPopupTask'
 import { createCommentListenerTask } from '#/tasks/CommentListenerTask'
 import type { ITask } from '#/tasks/ITask'
 import { TaskStopReason } from '#/tasks/ITask'
@@ -36,6 +41,8 @@ export class AccountSession {
   private platform: IPlatform
   private browserSession: BrowserSession | null = null
   private activeTasks: Map<LiveControlTask['type'], ITask> = new Map()
+  /** 串行化单条公屏发送，避免回复互相踩评论框 */
+  private commentSendChain: Promise<unknown> = Promise.resolve()
   private disconnecting = false
   private pageCloseHandler: (() => void) | null = null
   private browserDisconnectHandler: (() => void) | null = null
@@ -67,24 +74,23 @@ export class AccountSession {
 
     await this.persistStorageState()
 
-    this.platform
-      .getAccountName(this.browserSession)
-      .then(accountName => {
-        windowManager.send(IPC_CHANNELS.tasks.liveControl.notifyAccountName, {
-          ok: true,
-          accountId: this.account.id,
-          accountName,
-        })
-      })
-      .catch(error => {
-        this.logger.error('获取用户名失败：', error)
-        windowManager.send(IPC_CHANNELS.tasks.liveControl.notifyAccountName, {
-          ok: false,
-        })
-      })
-
     this.attachBrowserWatchers(this.browserSession)
     this.logger.success('成功与中控台建立连接')
+
+    // 先拿到账号名再恢复任务，避免评论监听启动时主播昵称仍为空
+    try {
+      const accountName = await this.platform.getAccountName(this.browserSession)
+      windowManager.send(IPC_CHANNELS.tasks.liveControl.notifyAccountName, {
+        ok: true,
+        accountId: this.account.id,
+        accountName,
+      })
+    } catch (error) {
+      this.logger.error('获取用户名失败：', error)
+      windowManager.send(IPC_CHANNELS.tasks.liveControl.notifyAccountName, {
+        ok: false,
+      })
+    }
 
     await this.resumeDesiredTasks()
   }
@@ -95,6 +101,7 @@ export class AccountSession {
 
     this.logger.warn(`与中控台断开连接（${reason}）`)
     this.detachBrowserWatchers()
+    clearOutboundComments(this.account.id)
 
     if (reason === 'manual' || reason === 'license') {
       this.desired.clearDesiredTasks()
@@ -250,6 +257,44 @@ export class AccountSession {
     return this.platform.listGoodsIds()
   }
 
+  public async popupOnce(goodsId: number): Result.ResultAsync<void, Error> {
+    return performPopupOnce(this.platform, goodsId, this.logger)
+  }
+
+  /**
+   * 发送单条公屏评论（自动回复等）。
+   * 与任务型 send-batch 分离，并按账号串行，避免连发互相掐断且能如实回传成败。
+   */
+  public async performCommentOnce(message: string): Result.ResultAsync<boolean, Error> {
+    if (!message.trim()) {
+      return Result.fail(new UnexpectedError({ description: '回复内容为空' }))
+    }
+    if (!isPerformComment(this.platform)) {
+      return Result.fail(
+        new TaskNotSupportedError({
+          taskName: 'send-comment',
+          targetName: this.platform.platformName,
+        }),
+      )
+    }
+    const platform = this.platform
+    const accountId = this.account.id
+    const run = async (): Promise<Result.Result<boolean, Error>> => {
+      rememberOutboundComment(accountId, message)
+      const result = await platform.performComment(message)
+      if (Result.isFailure(result)) {
+        forgetOutboundComment(accountId, message)
+      }
+      return result
+    }
+    const done = this.commentSendChain.then(run, run)
+    this.commentSendChain = done.then(
+      () => undefined,
+      () => undefined,
+    )
+    return done
+  }
+
   private async resumeDesiredTasks() {
     const snapshot = this.desired.getDesiredTasks()
     if (snapshot.length === 0) return
@@ -289,7 +334,7 @@ function makeTask<T extends LiveControlTask>(
     return createAutoCommentTask(platform, task.config, account, logger)
   }
   if (task.type === 'send-batch-messages' && isPerformComment(platform)) {
-    return createSendBatchMessageTask(platform, task.config, logger)
+    return createSendBatchMessageTask(platform, task.config, account, logger)
   }
   if (task.type === 'comment-listener' && isCommentListener(platform)) {
     return createCommentListenerTask(platform, task.config, account, logger)

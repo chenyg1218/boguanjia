@@ -2,6 +2,7 @@ import { Result } from '@praha/byethrow'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import type { ScopedLogger } from '#/logger'
 import type { ICommentListener } from '#/platforms/IPlatform'
+import { consumeOutboundComment } from '#/services/outboundComments'
 import { WebSocketService } from '#/services/WebSocketService'
 import windowManager from '#/windowManager'
 import { createTask } from './BaseTask'
@@ -44,6 +45,16 @@ export function createCommentListenerTask(
     const comment: LiveMessage = {
       ...message,
       time: Date.now(),
+    }
+    const alreadyHost = 'is_host' in comment && Boolean(comment.is_host)
+    // 已标主播的消息（如小红书 send_comment）不消费 outbound，留给可能的二次回环
+    if (
+      !alreadyHost &&
+      'content' in comment &&
+      typeof comment.content === 'string' &&
+      consumeOutboundComment(account.id, comment.content)
+    ) {
+      ;(comment as LiveMessage & { is_host?: boolean }).is_host = true
     }
     windowManager.send(IPC_CHANNELS.tasks.autoReply.showComment, {
       accountId: account.id,

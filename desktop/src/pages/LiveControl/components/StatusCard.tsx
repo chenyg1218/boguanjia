@@ -68,7 +68,7 @@ const StatusCard = React.memo(() => {
     <Card>
       <CardHeader>
         <CardTitle>控制台状态</CardTitle>
-        <CardDescription>查看并管理直播控制台的连接状态</CardDescription>
+        <CardDescription>选好平台后点「连接」，在弹出的浏览器里扫码登录</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
@@ -245,7 +245,7 @@ const HeadlessSetting = () => {
       <div>
         <div className="text-sm">无头模式</div>
         <div className="text-muted-foreground text-xs">
-          开启后浏览器将在后台运行，不会在桌面显示
+          打开后不弹出浏览器窗口。第一次请先关掉，方便扫码登录；登录成功后再开。
         </div>
       </div>
       <Switch

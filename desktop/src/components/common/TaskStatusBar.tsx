@@ -100,6 +100,7 @@ export function TaskStatusBar() {
         tone={replyRunning ? 'ok' : 'muted'}
         to="/auto-reply"
       />
+      {/* v1.2 暂缓：直播话术状态 */}
     </div>
   )
 }

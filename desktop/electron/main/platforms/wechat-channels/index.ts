@@ -37,6 +37,7 @@ export class WechatChannelPlatform
   /** 商品列表页面 */
   private productsPage: Page | null = null
   private commentListener: WeChatChannelCommentListener | null = null
+  private accountName = ''
   async connect(session: BrowserSession) {
     const { page } = session
     await page.goto(URLS.LIVE_CONTROL_PAGE, {
@@ -90,7 +91,9 @@ export class WechatChannelPlatform
     await tempPage.goto(URLS.INDEX_PAGE)
     const accountName = await getAccountName(tempPage, SELECTORS.ACCOUNT_NAME)
     await tempPage.close()
-    return accountName ?? ''
+    this.accountName = accountName ?? ''
+    this.commentListener?.setHostAccountName(this.accountName)
+    return this.accountName
   }
 
   async disconnect(): Promise<void> {
@@ -118,6 +121,7 @@ export class WechatChannelPlatform
       ensurePage(this.mainPage),
       Result.inspect(page => {
         this.commentListener = new WeChatChannelCommentListener(page)
+        this.commentListener.setHostAccountName(this.accountName)
         this.commentListener.startCommentListener(onComment)
       }),
     )

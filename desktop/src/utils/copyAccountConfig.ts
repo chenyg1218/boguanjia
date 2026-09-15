@@ -2,14 +2,21 @@ import { useAutoMessageStore } from '@/hooks/useAutoMessage'
 import { useAutoPopUpStore } from '@/hooks/useAutoPopUp'
 import { useAutoReplyConfigStore } from '@/hooks/useAutoReplyConfig'
 import { useChromeConfigStore } from '@/hooks/useChromeConfig'
+import { useVoiceBroadcastStore } from '@/hooks/useVoiceBroadcast'
 
 /** 可跨账号复制的配置模块（不含登录态 / 运行态 / 全局 AI Key） */
-export type CopyAccountConfigModule = 'autoMessage' | 'autoPopUp' | 'autoReply' | 'chrome'
+export type CopyAccountConfigModule =
+  | 'autoMessage'
+  | 'autoPopUp'
+  | 'autoReply'
+  | 'voiceBroadcast'
+  | 'chrome'
 
 export const COPY_ACCOUNT_MODULE_LABELS: Record<CopyAccountConfigModule, string> = {
   autoMessage: '自动发言',
   autoPopUp: '自动弹窗',
   autoReply: '自动回复',
+  voiceBroadcast: '语音设置',
   chrome: '浏览器设置',
 }
 
@@ -67,6 +74,12 @@ function copyChrome(fromAccountId: string, toAccountId: string) {
   setHeadless(toAccountId, source.headless)
 }
 
+function copyVoiceBroadcast(fromAccountId: string, toAccountId: string) {
+  const source = useVoiceBroadcastStore.getState().contexts[fromAccountId]
+  if (!source?.config) return
+  useVoiceBroadcastStore.getState().setConfig(toAccountId, deepClone(source.config))
+}
+
 const MODULE_COPYERS: Record<
   CopyAccountConfigModule,
   (fromAccountId: string, toAccountId: string) => void
@@ -74,6 +87,7 @@ const MODULE_COPYERS: Record<
   autoMessage: copyAutoMessage,
   autoPopUp: copyAutoPopUp,
   autoReply: copyAutoReply,
+  voiceBroadcast: copyVoiceBroadcast,
   chrome: copyChrome,
 }
 

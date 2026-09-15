@@ -84,7 +84,7 @@ export function BrowserSetting() {
     <Card>
       <CardHeader>
         <CardTitle>浏览器设置</CardTitle>
-        <CardDescription>配置浏览器路径</CardDescription>
+        <CardDescription>本机要有 Chrome 或 Edge，用来打开平台后台</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* 自动检测 */}

@@ -6,9 +6,9 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { useAutoPopUpActions, useCurrentAutoPopUp } from '@/hooks/useAutoPopUp'
 
-// 弹窗设置卡片组件
 const PopUpSettingsCard = React.memo(() => {
-  const { scheduler, random } = useCurrentAutoPopUp(context => context.config)
+  const config = useCurrentAutoPopUp(context => context.config)
+  const { scheduler, random } = config
   const { setScheduler, setRandom } = useAutoPopUpActions()
 
   const handleIntervalChange = useMemoizedFn((index: 0 | 1, value: string) => {
@@ -27,7 +27,7 @@ const PopUpSettingsCard = React.memo(() => {
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <Label>弹窗设置</Label>
-              <p className="text-sm text-muted-foreground">配置商品弹窗的相关选项</p>
+              <p className="text-sm text-muted-foreground">控制弹多快、按什么顺序弹</p>
             </div>
             <div className="flex items-center space-x-2">
               <Switch id={randomPopUpId} checked={random} onCheckedChange={setRandom} />
@@ -60,7 +60,7 @@ const PopUpSettingsCard = React.memo(() => {
               <span className="text-sm text-muted-foreground">秒</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              系统将在设定的时间区间内随机选择弹窗时机
+              每隔这么多秒弹一次。填一个范围，每次间隔会略有不同。
             </p>
           </div>
         </div>

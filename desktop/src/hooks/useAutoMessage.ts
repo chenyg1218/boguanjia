@@ -95,7 +95,7 @@ export const useAutoMessageStore = create<AutoMessageStore>()(
     }),
     {
       name: 'auto-message-storage',
-      version: 1,
+      version: 3,
       migrate: (persistedState, version) => {
         if (version === 0) {
           try {
@@ -131,6 +131,18 @@ export const useAutoMessageStore = create<AutoMessageStore>()(
             }
           }
         }
+        if (version < 3) {
+          const state = persistedState as AutoMessageStore
+          if (state?.contexts) {
+            for (const ctx of Object.values(state.contexts)) {
+              if (ctx?.config && 'channel' in ctx.config) {
+                delete (ctx.config as { channel?: unknown }).channel
+              }
+            }
+          }
+          return state
+        }
+        return persistedState as AutoMessageStore
       },
       partialize: state => ({
         contexts: Object.fromEntries(

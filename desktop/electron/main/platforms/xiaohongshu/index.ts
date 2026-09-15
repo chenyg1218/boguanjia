@@ -61,8 +61,9 @@ export class XiaohongshuPlatform
 
   async getAccountName(session: BrowserSession) {
     const accountName = await getAccountName(session.page, SELECTORS.ACCOUNT_NAME)
-    if (accountName?.endsWith('的店')) {
-      this.accountName = accountName.slice(0, -2)
+    if (accountName) {
+      this.accountName = accountName.endsWith('的店') ? accountName.slice(0, -2) : accountName
+      this.commentListener?.setAccountName(this.accountName)
     }
     return this.accountName
   }

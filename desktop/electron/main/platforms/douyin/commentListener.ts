@@ -7,19 +7,37 @@ export class ControlListener implements ICommentListener {
   readonly _isCommentListener = true
 
   private isRunning = false
+  private hostAccountName = ''
   private handleComment: (comment: DouyinLiveMessage) => void = () => {}
   constructor(private page: Page) {
     this.handleResponse = this.handleResponse.bind(this)
   }
 
+  setHostAccountName(name: string) {
+    this.hostAccountName = name.trim()
+  }
+
   startCommentListener(onComment: (comment: DouyinLiveMessage) => void) {
     this.handleComment = onComment
+    this.isRunning = true
     this.page.on('response', this.handleResponse)
     this.keepPageRunning()
   }
 
   stopCommentListener() {
+    this.isRunning = false
     this.page.off('response', this.handleResponse)
+  }
+
+  private isHostComment(comment: Record<string, unknown>, nickName: string) {
+    if (comment.is_anchor === true || comment.is_author === true || comment.is_author === 1) {
+      return true
+    }
+    if (comment.comment_tag === '主播' || comment.user_tag === '主播') {
+      return true
+    }
+    const host = this.hostAccountName
+    return Boolean(host && nickName.trim() === host)
   }
 
   private async handleResponse(response: Response) {
@@ -27,12 +45,14 @@ export class ControlListener implements ICommentListener {
     if (url.includes('comment/info?')) {
       const body = await response.json()
       for (const comment of body.data.comment_infos) {
+        const nick_name = String(comment.nick_name ?? '')
         const commentData: DouyinLiveMessage = {
           msg_id: comment.comment_id,
-          nick_name: comment.nick_name,
+          nick_name,
           content: comment.content,
           msg_type: 'comment',
           time: Date.now(),
+          is_host: this.isHostComment(comment as Record<string, unknown>, nick_name),
         }
         this.handleComment(commentData)
       }
@@ -99,11 +119,16 @@ export class CompassListener implements ICommentListener {
   readonly _isCommentListener = true
 
   protected compassPage: Page | undefined
+  private hostAccountName = ''
   private handleComment: (comment: DouyinLiveMessage) => void = () => {}
   constructor(
     private platform: 'buyin' | 'douyin',
     protected page: Page,
   ) {}
+
+  setHostAccountName(name: string) {
+    this.hostAccountName = name.trim()
+  }
 
   protected async connectCompass() {
     const getLiveRoomId = () => {
@@ -184,7 +209,15 @@ export class CompassListener implements ICommentListener {
     for (const messages of Object.values(data.data.messages)) {
       if (!messages) continue
       for (const message of messages) {
-        const comment = { ...message, time: Date.now() }
+        const nick = 'nick_name' in message ? String(message.nick_name ?? '').trim() : ''
+        const isHost =
+          Boolean(this.hostAccountName && nick && nick === this.hostAccountName) ||
+          Boolean('is_host' in message && message.is_host)
+        const comment = {
+          ...message,
+          time: Date.now(),
+          ...(isHost ? { is_host: true } : {}),
+        }
         this.handleComment(comment)
       }
     }

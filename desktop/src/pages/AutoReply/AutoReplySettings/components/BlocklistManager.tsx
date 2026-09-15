@@ -27,7 +27,7 @@ export function BlocklistManager() {
     <div className="space-y-4">
       <div>
         <h3 className="text-sm font-medium">用户屏蔽列表</h3>
-        <p className="text-sm text-muted-foreground">屏蔽列表中的用户将不会被自动回复</p>
+        <p className="text-sm text-muted-foreground">填用户名后，这些人发的评论不会自动回复</p>
       </div>
 
       <div className="space-y-2 max-h-[200px] overflow-y-auto border rounded-md p-2">
@@ -53,7 +53,7 @@ export function BlocklistManager() {
 
       <div className="flex items-center gap-2">
         <Input
-          placeholder="输入用户名..."
+          placeholder="输入要屏蔽的用户名"
           value={newUser}
           onChange={e => setNewUser(e.target.value)}
           className="flex-1"

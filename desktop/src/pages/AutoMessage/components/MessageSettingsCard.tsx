@@ -53,7 +53,7 @@ const MessageSettingsCard = React.memo(() => {
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <Label>发送设置</Label>
-              <p className="text-sm text-muted-foreground">配置消息发送的相关选项</p>
+              <p className="text-sm text-muted-foreground">控制发多快、发哪一句</p>
             </div>
             <div className="flex items-center space-x-2">
               <Switch id={randomId} checked={random} onCheckedChange={setRandom} />
@@ -86,7 +86,7 @@ const MessageSettingsCard = React.memo(() => {
               <span className="text-sm text-muted-foreground">秒</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              系统将在设定的时间区间内随机选择发送时机
+              每隔这么多秒发一句。填一个范围（如 8～15），每次间隔会略有不同，不那么死板。
             </p>
           </div>
 
@@ -97,7 +97,7 @@ const MessageSettingsCard = React.memo(() => {
             </Label>
           </div>
           <p className="text-xs text-muted-foreground -mt-4">
-            开启后在消息中插入可见空格，降低重复内容被平台屏蔽的概率
+            打开后在话术里加空格，降低被平台当成刷屏屏蔽的概率
           </p>
 
           <div className="space-y-1">
@@ -113,11 +113,11 @@ const MessageSettingsCard = React.memo(() => {
             </div>
             {unlimitedLength ? (
               <p className="text-xs text-amber-600">
-                已解除限制：快手评论过长易发送失败或触发风控，建议单条尽量短、间隔不要过密。
+                已解除限制：话术太长容易发不出去或被平台限制，建议还是写短一点、发慢一点。
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">
-                默认有字数上限，更贴近快手评论区习惯；仅在确有需要时再解除。
+                默认限制字数，更不容易被平台拦截；真要发长文再打开。
               </p>
             )}
           </div>

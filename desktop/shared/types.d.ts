@@ -107,6 +107,8 @@ interface CommentMessage {
   msg_id: string
   nick_name: string
   content: string
+  /** 主播自己的评论（平台可识别时由监听器填充） */
+  is_host?: boolean
 }
 
 interface RoomEnterMessage {
@@ -163,6 +165,7 @@ declare type WechatChannelLiveMessage = {
   user_id: string
   content: string
   time: number
+  is_host?: boolean
 }
 
 declare type XiaohongshuCommentLiveMessage = {
@@ -172,6 +175,7 @@ declare type XiaohongshuCommentLiveMessage = {
   user_id: string
   content: string
   time: number
+  is_host?: boolean
 }
 
 declare type TaobaoCommentLiveMessage = {
@@ -181,6 +185,7 @@ declare type TaobaoCommentLiveMessage = {
   user_id: string
   content: string
   time: number
+  is_host?: boolean
 }
 
 declare type LiveMessage =

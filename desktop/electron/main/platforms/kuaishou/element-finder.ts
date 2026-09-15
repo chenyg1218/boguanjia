@@ -47,24 +47,45 @@ export const kuaishouElementFinder: IElementFinder = {
   },
 
   async getClickableSubmitCommentButton(page: Page) {
-    const submitButton = await page.$(SELECTORS.commentInput.SUBMIT_BUTTON)
-    if (!submitButton) {
-      return Result.fail(
-        new ElementNotFoundError({
-          elementName: '提交评论按钮',
-          selector: SELECTORS.commentInput.SUBMIT_BUTTON,
-        }),
-      )
+    // reply-content 内常有「智能快捷回复」等下拉按钮，不能取第一个 button
+    const buttons = await page.$$(SELECTORS.commentInput.SUBMIT_BUTTON)
+    let disabledSend: ElementHandle<SVGElement | HTMLElement> | null = null
+    for (const button of buttons) {
+      const text = ((await button.textContent()) ?? '').replace(/\s+/g, '')
+      if (!text.includes('发送')) continue
+      if (await button.isDisabled()) {
+        disabledSend = button
+        continue
+      }
+      return Result.succeed(button)
     }
-    if (await submitButton.isDisabled()) {
+    // Playwright :has-text 兜底（文案在子节点时 $$ 文本有时不稳定）
+    const byText = await page.$('div[class^=reply-content] button:has-text("发送")')
+    if (byText) {
+      if (await byText.isDisabled()) {
+        return Result.fail(
+          new ElementDisabledError({
+            elementName: '提交评论按钮',
+            element: await byText.evaluate(el => el.outerHTML),
+          }),
+        )
+      }
+      return Result.succeed(byText)
+    }
+    if (disabledSend) {
       return Result.fail(
         new ElementDisabledError({
           elementName: '提交评论按钮',
-          element: await submitButton.evaluate(el => el.outerHTML),
+          element: await disabledSend.evaluate(el => el.outerHTML),
         }),
       )
     }
-    return Result.succeed(submitButton)
+    return Result.fail(
+      new ElementNotFoundError({
+        elementName: '提交评论按钮',
+        selector: `${SELECTORS.commentInput.SUBMIT_BUTTON}（含「发送」）`,
+      }),
+    )
   },
 
   async getPinTopLabel(page: Page) {

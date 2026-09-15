@@ -161,3 +161,28 @@ export function CarbonStopFilledAlt(props: SVGProps<SVGSVGElement>) {
     </svg>
   )
 }
+
+export function CarbonMicrophoneFilled(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 32 32" {...props}>
+      <title>Microphone</title>
+      <path
+        fill="currentColor"
+        d="M23 14v-4a7 7 0 0 0-14 0v4a1 1 0 0 0 1 1h2v-5a4 4 0 0 1 8 0v5h2a1 1 0 0 0 1-1m-7 10a8 8 0 0 0 8-8h-2a6 6 0 0 1-12 0H8a8 8 0 0 0 7 7.94V28h-4v2h10v-2h-4v-4.06A8 8 0 0 0 16 24"
+      />
+    </svg>
+  )
+}
+
+export function CarbonDocument(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 32 32" {...props}>
+      <title>Document</title>
+      <path
+        fill="currentColor"
+        d="M25.7 9.3l-7-7A.91.91 0 0 0 18 2H8a2.006 2.006 0 0 0-2 2v24a2.006 2.006 0 0 0 2 2h16a2.006 2.006 0 0 0 2-2V10a.91.91 0 0 0-.3-.7M18 4.4L23.6 10H18ZM24 28H8V4h8v6a2.006 2.006 0 0 0 2 2h6Z"
+      />
+      <path fill="currentColor" d="M10 16h12v2H10zm0 6h12v2H10z" />
+    </svg>
+  )
+}

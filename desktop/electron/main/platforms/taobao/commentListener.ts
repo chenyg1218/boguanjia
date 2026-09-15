@@ -105,6 +105,7 @@ export class TaobaoCommentListener {
             user_id: comment.publisherId,
             time: Number(comment.timestamp),
             content: comment.content,
+            is_host: comment.renders?.render_anchor === 'true',
           })
         }
       }

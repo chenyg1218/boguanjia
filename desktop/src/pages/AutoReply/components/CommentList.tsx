@@ -164,7 +164,13 @@ export default function CommentList({
   const accountName = useCurrentLiveControl(ctx => ctx.accountName)
 
   const filteredComments = useMemo(
-    () => (hideHost ? comments.filter(comment => comment.nick_name !== accountName) : comments),
+    () =>
+      hideHost
+        ? comments.filter(comment => {
+            if ('is_host' in comment && comment.is_host) return false
+            return comment.nick_name?.trim() !== accountName?.trim()
+          })
+        : comments,
     [comments, hideHost, accountName],
   )
 

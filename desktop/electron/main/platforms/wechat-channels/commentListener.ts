@@ -77,13 +77,24 @@ interface AppMsgPayload {
 
 export class WeChatChannelCommentListener implements ICommentListener {
   private handleComment: (comment: WechatChannelLiveMessage) => void = () => {}
+  private hostAccountName = ''
   constructor(private page: Page) {
     this.handleResponse = this.handleResponse.bind(this)
   }
   readonly _isCommentListener = true
 
+  setHostAccountName(name: string) {
+    this.hostAccountName = name.trim()
+  }
+
   getCommentListenerPage(): Page {
     return this.page
+  }
+
+  private isHostMessage(nickName: string, liveIdentity?: number) {
+    // liveIdentity === 1 在视频号直播里通常表示主播身份（启发式）
+    if (liveIdentity === 1) return true
+    return Boolean(this.hostAccountName && nickName.trim() === this.hostAccountName)
   }
 
   private async handleResponse(resp: Response) {
@@ -93,13 +104,15 @@ export class WeChatChannelCommentListener implements ICommentListener {
     if (body.errCode !== 0) return
     body.data.msgList.forEach(msg => {
       if (msg.type !== 1) return
+      const nick_name = msg.nickname
       const message: WechatChannelLiveMessage = {
         msg_type: 'wechat_channel_live_msg',
         msg_id: msg.clientMsgId,
-        nick_name: msg.nickname,
+        nick_name,
         user_id: msg.username,
         content: msg.content,
         time: Date.now(),
+        is_host: this.isHostMessage(nick_name, msg.finderLiveContact?.liveIdentity),
       }
       this.handleComment(message)
     })
@@ -110,13 +123,15 @@ export class WeChatChannelCommentListener implements ICommentListener {
         Buffer.from(msg.payload, 'base64').toString('utf-8'),
       ) as AppMsgPayload
       const content = payload.content
+      const nick_name = msg.fromUserContact.contact.nickname
       const message: WechatChannelLiveMessage = {
         msg_type: 'wechat_channel_live_msg',
         msg_id: msg.clientMsgId,
-        nick_name: msg.fromUserContact.contact.nickname,
+        nick_name,
         user_id: msg.fromUserContact.contact.usename,
         content,
         time: Date.now(),
+        is_host: this.isHostMessage(nick_name),
       }
       this.handleComment(message)
     })

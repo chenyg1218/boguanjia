@@ -17,11 +17,15 @@ export default function PreviewList({
   const { currentAccountId } = useAccounts()
   const handleSendReply = async (replyContent: string, commentId: string) => {
     try {
-      await window.ipcRenderer.invoke(
+      const result = await window.ipcRenderer.invoke(
         IPC_CHANNELS.tasks.autoReply.sendReply,
         currentAccountId,
         replyContent,
       )
+      if (result && typeof result === 'object' && 'ok' in result && !result.ok) {
+        console.error('发送回复失败:', result.error)
+        return
+      }
       markReplySent(commentId)
     } catch (error) {
       console.error('发送回复失败:', error)
@@ -32,14 +36,18 @@ export default function PreviewList({
     <Card className="shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle>回复预览</CardTitle>
-        <CardDescription>AI 生成的回复内容</CardDescription>
+        <CardDescription>
+          关键词回复会自动发到直播间。AI 回复默认要你点「发送」才会发出去。
+        </CardDescription>
       </CardHeader>
       <Separator />
       <CardContent>
         <ScrollArea className="py-2 h-[400px]">
           <div className="space-y-1">
             {replies.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8">暂无回复数据</div>
+              <div className="text-center text-muted-foreground py-8">
+                还没有回复。先设好关键词并开始任务，命中后会显示在这里。
+              </div>
             ) : (
               replies.map(reply => {
                 const relatedComment = comments.find(c => c.msg_id === reply.commentId)
