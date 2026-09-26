@@ -13,6 +13,7 @@ import { platformFactory } from '#/platforms'
 import {
   type IPlatform,
   isCommentListener,
+  isLiveEndedWatch,
   isPerformComment,
   isPerformPopup,
 } from '#/platforms/IPlatform'
@@ -46,6 +47,9 @@ export class AccountSession {
   private disconnecting = false
   private pageCloseHandler: (() => void) | null = null
   private browserDisconnectHandler: (() => void) | null = null
+  /** 避免 LIVE_ENDED 级联停任务时互相重入 */
+  private cascadingLiveEnded = false
+  private liveEndedWatching = false
 
   constructor(
     platformName: LiveControlPlatform,
@@ -101,6 +105,7 @@ export class AccountSession {
 
     this.logger.warn(`与中控台断开连接（${reason}）`)
     this.detachBrowserWatchers()
+    this.stopLiveEndedWatch()
     clearOutboundComments(this.account.id)
 
     if (reason === 'manual' || reason === 'license') {
@@ -203,14 +208,25 @@ export class AccountSession {
       this.activeTasks.delete(task.type)
       if (
         isResumableTaskType(task.type) &&
-        (reason === TaskStopReason.MANUAL || reason === TaskStopReason.ERROR)
+        (reason === TaskStopReason.MANUAL ||
+          reason === TaskStopReason.ERROR ||
+          reason === TaskStopReason.LIVE_ENDED)
       ) {
         this.desired.deleteDesiredTask(task.type)
+      }
+      if (reason === TaskStopReason.LIVE_ENDED) {
+        this.cascadeStopOnLiveEnded(task.type)
+      }
+      if (!this.hasFollowLiveTasks()) {
+        this.stopLiveEndedWatch()
       }
     })
 
     await newTask.value.start()
     this.activeTasks.set(task.type, newTask.value)
+    if (isFollowLiveTaskType(task.type)) {
+      this.ensureLiveEndedWatch()
+    }
     return Result.succeed()
   }
 
@@ -227,6 +243,53 @@ export class AccountSession {
       return
     }
     task.stop(reason)
+  }
+
+  /** 跟播类任务：停播后应全部停下 */
+  private hasFollowLiveTasks() {
+    return FOLLOW_LIVE_TASK_TYPES.some(type => this.activeTasks.has(type))
+  }
+
+  private ensureLiveEndedWatch() {
+    if (this.liveEndedWatching || !isLiveEndedWatch(this.platform)) return
+    this.liveEndedWatching = true
+    try {
+      this.platform.startLiveEndedWatch(reason => {
+        this.logger.warn(`检测到直播已结束（${reason}）`)
+        this.cascadeStopOnLiveEnded(null)
+      })
+    } catch (error) {
+      this.liveEndedWatching = false
+      this.logger.error('启动停播检测失败：', error)
+    }
+  }
+
+  private stopLiveEndedWatch() {
+    if (!this.liveEndedWatching) return
+    this.liveEndedWatching = false
+    if (isLiveEndedWatch(this.platform)) {
+      this.platform.stopLiveEndedWatch()
+    }
+  }
+
+  /**
+   * 任一跟播任务因停播停止时，级联停下其余跟播任务。
+   * @param sourceType 已停的任务；null 表示由平台停播检测直接触发
+   */
+  private cascadeStopOnLiveEnded(sourceType: LiveControlTask['type'] | null) {
+    if (this.cascadingLiveEnded) return
+    this.cascadingLiveEnded = true
+    try {
+      for (const type of FOLLOW_LIVE_TASK_TYPES) {
+        if (type === sourceType) continue
+        if (this.activeTasks.has(type)) {
+          this.stopTask(type, TaskStopReason.LIVE_ENDED)
+        }
+      }
+    } finally {
+      this.cascadingLiveEnded = false
+      this.stopLiveEndedWatch()
+    }
   }
 
   public updateTaskConfig<T extends LiveControlTask>(
@@ -345,4 +408,12 @@ function makeTask<T extends LiveControlTask>(
       targetName: platform.platformName,
     }),
   )
+}
+
+const FOLLOW_LIVE_TASK_TYPES = ['auto-comment', 'auto-popup', 'comment-listener'] as const
+
+function isFollowLiveTaskType(
+  type: LiveControlTask['type'],
+): type is (typeof FOLLOW_LIVE_TASK_TYPES)[number] {
+  return (FOLLOW_LIVE_TASK_TYPES as readonly string[]).includes(type)
 }

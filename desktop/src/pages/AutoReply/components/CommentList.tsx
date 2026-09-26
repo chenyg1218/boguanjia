@@ -1,19 +1,14 @@
-import { motion } from 'motion/react'
-import { Pause, Play, RefreshCcw } from 'lucide-react'
+import { RefreshCcw } from 'lucide-react'
 import { memo, useId, useMemo, useState } from 'react'
-import { IPC_CHANNELS } from 'shared/ipcChannels'
+import { WizardHighlight } from '@/components/onboarding/WizardTarget'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
-import { CONNECT_LIVE_CONTROL_FIRST } from '@/constants/copy'
-import { useAccounts } from '@/hooks/useAccounts'
 import { type Message, useAutoReply } from '@/hooks/useAutoReply'
-import { useAutoReplyConfig } from '@/hooks/useAutoReplyConfig'
 import { useCurrentLiveControl } from '@/hooks/useLiveControl'
-import { useToast } from '@/hooks/useToast'
 import { cn } from '@/lib/utils'
 
 const getMessageColor = (type: Message['msg_type']) => {
@@ -88,21 +83,17 @@ const MessageItem = memo(
   },
 )
 
-const _EnterRoomMessage = ({ message }: { message: Message }) => {
-  const displayName = message.nick_name
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.3 }}
-      className="flex items-center gap-2 p-2 rounded-md bg-blue-50/80 border border-blue-100"
-    >
-      <span className="font-medium">{displayName}</span>
-      <span className="text-sm text-blue-500">进入直播间</span>
-    </motion.div>
-  )
+function listenStatusText(isListening: ReturnType<typeof useAutoReply>['isListening']) {
+  switch (isListening) {
+    case 'listening':
+      return '监听中'
+    case 'waiting':
+      return '连接监听中…'
+    case 'error':
+      return '监听异常'
+    default:
+      return '未监听'
+  }
 }
 
 export default function CommentList({
@@ -110,58 +101,11 @@ export default function CommentList({
 }: {
   highlight: string | null
 }) {
-  const { comments, isListening, setIsListening } = useAutoReply()
-  const { config } = useAutoReplyConfig()
+  const { comments, isListening, setIsRunning, setIsListening } = useAutoReply()
   const isConnected = useCurrentLiveControl(context => context.isConnected)
-  const { toast } = useToast()
-  const [hideHost, setHideHost] = useState(false)
-  const { currentAccountId } = useAccounts()
-
-  // 手动启动监听评论
-  const startListening = async () => {
-    if (isConnected !== 'connected') {
-      toast.error(CONNECT_LIVE_CONTROL_FIRST)
-      return
-    }
-
-    try {
-      setIsListening('waiting')
-      const result = await window.ipcRenderer.invoke(
-        IPC_CHANNELS.tasks.autoReply.startCommentListener,
-        currentAccountId,
-        {
-          source: config.entry,
-          ws: config.ws?.enable ? { port: config.ws.port } : undefined,
-        },
-      )
-      if (!result.ok) {
-        throw new Error(
-          result.error || '监听评论失败。请确认已连接直播控制台后重试',
-        )
-      }
-      toast.success('监听评论成功')
-      setIsListening('listening')
-    } catch (error) {
-      setIsListening('error')
-      toast.error(error instanceof Error ? error.message : '监听评论失败，请查看运行日志后重试')
-    }
-  }
-
-  // 手动停止监听评论
-  const stopListening = async () => {
-    try {
-      await window.ipcRenderer.invoke(
-        IPC_CHANNELS.tasks.autoReply.stopCommentListener,
-        currentAccountId,
-      )
-      setIsListening('stopped')
-      toast.success('已停止监听评论')
-    } catch (_error) {
-      toast.error('停止监听失败，请断开直播控制台后重试')
-    }
-  }
-
   const accountName = useCurrentLiveControl(ctx => ctx.accountName)
+  const [hideHost, setHideHost] = useState(false)
+  const userCommentOnlyId = useId()
 
   const filteredComments = useMemo(
     () =>
@@ -174,88 +118,82 @@ export default function CommentList({
     [comments, hideHost, accountName],
   )
 
-  const isButtonDisabled = isListening === 'waiting' || isConnected !== 'connected'
+  const handleRetry = () => {
+    if (isConnected !== 'connected') return
+    setIsListening('stopped')
+    setIsRunning(true)
+  }
 
-  const userCommentOnlyId = useId()
+  const emptyHint =
+    isListening === 'listening'
+      ? '暂无评论数据'
+      : isListening === 'error'
+        ? '评论监听异常，自动回复已停止。可点右上角重试'
+        : isListening === 'waiting'
+          ? '正在连接评论监听…'
+          : '开始任务后显示直播间评论'
 
   return (
     <Card className="shadow-sm">
       <CardHeader className="pb-3 relative">
         <CardTitle>评论列表</CardTitle>
-        <CardDescription>实时显示直播间的评论内容</CardDescription>
+        <CardDescription>
+          开始自动回复任务后监听，并在这里实时显示直播间评论
+        </CardDescription>
         <div className="flex items-center space-x-2 absolute right-4 top-4">
-          {isListening === 'listening' ? (
+          <span
+            className={cn(
+              'text-xs',
+              isListening === 'listening' && 'text-emerald-600',
+              isListening === 'waiting' && 'text-sky-600',
+              isListening === 'error' && 'text-amber-600',
+              isListening === 'stopped' && 'text-muted-foreground',
+            )}
+          >
+            {listenStatusText(isListening)}
+          </span>
+
+          {isListening === 'error' && (
             <Button
-              variant="outline"
-              size="sm"
-              onClick={stopListening}
-              className="flex items-center gap-1"
+              variant="ghost"
+              size="icon"
+              onClick={handleRetry}
+              disabled={isConnected !== 'connected'}
+              title="重新开始监听"
             >
-              <Pause className="h-4 w-4" />
-              停止监听
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={startListening}
-              className="flex items-center gap-1"
-              title={
-                isListening === 'waiting' || isConnected !== 'connected'
-                  ? CONNECT_LIVE_CONTROL_FIRST
-                  : undefined
-              }
-              disabled={isButtonDisabled}
-            >
-              {isListening === 'waiting' ? (
-                '连接中...'
-              ) : (
-                <>
-                  <Play className="h-4 w-4" />
-                  开始监听
-                </>
-              )}
+              <RefreshCcw className="h-4 w-4" />
             </Button>
           )}
 
-          {isConnected === 'connected' && (
-            <>
-              {isListening === 'error' && (
-                <Button variant="ghost" size="icon" onClick={startListening} title="重试">
-                  <RefreshCcw className="h-4 w-4" />
-                </Button>
-              )}
-
-              {isListening === 'listening' && (
-                <div className="flex items-center gap-2 ml-2">
-                  <Switch id={userCommentOnlyId} checked={hideHost} onCheckedChange={setHideHost} />
-                  <Label htmlFor={userCommentOnlyId}>仅用户评论</Label>
-                </div>
-              )}
-            </>
+          {isConnected === 'connected' && isListening === 'listening' && (
+            <div className="flex items-center gap-2 ml-2">
+              <Switch id={userCommentOnlyId} checked={hideHost} onCheckedChange={setHideHost} />
+              <Label htmlFor={userCommentOnlyId}>仅用户评论</Label>
+            </div>
           )}
         </div>
       </CardHeader>
       <Separator />
       <CardContent className="p-0">
-        <ScrollArea className="h-[400px]">
-          <div className="py-2 space-y-0.5">
-            {filteredComments.length === 0 ? (
-              <div className="flex items-center justify-center h-20 text-muted-foreground">
-                {isListening === 'listening' ? '暂无评论数据' : '请点击"开始监听"按钮开始接收评论'}
-              </div>
-            ) : (
-              filteredComments.map(comment => (
-                <MessageItem
-                  key={comment.msg_id}
-                  message={comment}
-                  // isHost={comment.nick_name === accountName}
-                  isHighlighted={highlightedCommentId === comment.msg_id}
-                />
-              ))
-            )}
-          </div>
-        </ScrollArea>
+        <WizardHighlight targetId="auto-reply-comments" className="block">
+          <ScrollArea className="h-[400px]">
+            <div className="py-2 space-y-0.5">
+              {filteredComments.length === 0 ? (
+                <div className="flex items-center justify-center h-20 text-muted-foreground">
+                  {emptyHint}
+                </div>
+              ) : (
+                filteredComments.map(comment => (
+                  <MessageItem
+                    key={comment.msg_id}
+                    message={comment}
+                    isHighlighted={highlightedCommentId === comment.msg_id}
+                  />
+                ))
+              )}
+            </div>
+          </ScrollArea>
+        </WizardHighlight>
       </CardContent>
     </Card>
   )

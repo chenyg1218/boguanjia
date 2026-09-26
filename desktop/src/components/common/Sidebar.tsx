@@ -1,10 +1,7 @@
 import { Link, NavLink } from 'react-router'
-import { formatMaxAccounts, planDisplayName } from 'shared/licensePlan'
-import { Badge } from '@/components/ui/badge'
 import { useCurrentAutoMessage } from '@/hooks/useAutoMessage'
 import { useCurrentAutoPopUp } from '@/hooks/useAutoPopUp'
 import { useAutoReply } from '@/hooks/useAutoReply'
-import { useLicense } from '@/hooks/useLicense'
 import { useCurrentLiveControl } from '@/hooks/useLiveControl'
 import { cn } from '@/lib/utils'
 import { openTutorial } from '@/utils/tutorial'
@@ -13,10 +10,12 @@ import {
   CarbonChat,
   CarbonContentDeliveryNetwork,
   CarbonDocument,
+  CarbonGift,
   CarbonIbmEventAutomation,
   CarbonIbmWatsonTextToSpeech,
   CarbonSettings,
 } from '../icons/carbon'
+
 // v1.2 暂缓：CarbonMicrophoneFilled（语音设置）
 
 interface SidebarTab {
@@ -31,7 +30,6 @@ export default function Sidebar() {
   const isAutoMessageRunning = useCurrentAutoMessage(context => context.isRunning)
   const isAutoPopupRunning = useCurrentAutoPopUp(context => context.isRunning)
   const { isRunning: isAutoReplyRunning } = useAutoReply()
-  const { status, ready } = useLicense()
 
   const tabs: SidebarTab[] = [
     {
@@ -75,16 +73,11 @@ export default function Sidebar() {
       name: 'AI 助手',
       icon: <CarbonIbmWatsonTextToSpeech className="w-5 h-5" />,
     },
-    {
-      id: '/settings',
-      name: '应用设置',
-      icon: <CarbonSettings className="w-5 h-5" />,
-    },
   ]
   return (
     <aside className="flex w-64 min-w-[256px] flex-col border-r bg-background">
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="mb-1 flex items-center gap-2.5">
+        <div className="mb-6 flex items-center gap-2.5">
           <img
             src={`${import.meta.env.BASE_URL}favicon.png`}
             alt="播管家"
@@ -92,7 +85,6 @@ export default function Sidebar() {
           />
           <h2 className="text-lg font-semibold">播管家</h2>
         </div>
-        <p className="mb-6 text-xs text-muted-foreground">先连中控台，再开下面的功能</p>
         <nav className="space-y-2">
           {tabs.map(tab => (
             <NavLink
@@ -117,7 +109,14 @@ export default function Sidebar() {
         </nav>
       </div>
 
-      <div className="border-t p-4 space-y-3">
+      <div className="border-t p-4 space-y-1">
+        <Link
+          to="/membership"
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground no-underline"
+        >
+          <CarbonGift className="h-4 w-4" />
+          会员权益
+        </Link>
         <button
           type="button"
           onClick={() => void openTutorial()}
@@ -126,16 +125,20 @@ export default function Sidebar() {
           <CarbonDocument className="h-4 w-4" />
           使用教程
         </button>
-        {ready ? (
-          <Link to="/settings#license" className="no-underline">
-            <Badge variant={status.isPro ? 'default' : 'secondary'} className="cursor-pointer">
-              {planDisplayName(status.plan)}
-              {status.isPro && status.expiresAt
-                ? ` · ${status.expiresAt.slice(0, 10)}`
-                : ` · ${formatMaxAccounts(status.maxAccounts)}`}
-            </Badge>
-          </Link>
-        ) : null}
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            cn(
+              'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors no-underline',
+              isActive
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+            )
+          }
+        >
+          <CarbonSettings className="h-4 w-4" />
+          应用设置
+        </NavLink>
       </div>
     </aside>
   )

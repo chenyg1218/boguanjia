@@ -20,6 +20,7 @@ import {
 } from '../helper'
 import type {
   ICommentListener,
+  ILiveEndedWatch,
   IPerformComment,
   IPerformPopup,
   IPlatform,
@@ -28,6 +29,7 @@ import type {
 import { CompassListener, ControlListener } from './commentListener'
 import { REGEXPS, SELECTORS, TEXTS, URLS } from './constant'
 import { douyinElementFinder as elementFinder } from './element-finder'
+import { DouyinLiveEndedWatcher } from './liveEndedWatcher'
 
 const PLATFORM_NAME = '抖音小店' as const
 
@@ -35,15 +37,23 @@ const PLATFORM_NAME = '抖音小店' as const
  * 抖音小店
  */
 export class DouyinPlatform
-  implements IPlatform, IPerformPopup, IPerformComment, ICommentListener, ISendRedPacket
+  implements
+    IPlatform,
+    IPerformPopup,
+    IPerformComment,
+    ICommentListener,
+    ISendRedPacket,
+    ILiveEndedWatch
 {
   readonly _isPerformComment = true
   readonly _isPerformPopup = true
   readonly _isCommentListener = true
   readonly _isSendRedPacket = true
+  readonly _isLiveEndedWatch = true
 
   public mainPage: Page | null = null
   private commentListener: ICommentListener | null = null
+  private liveEndedWatcher: DouyinLiveEndedWatcher | null = null
   private accountName = ''
 
   async connect(browserSession: BrowserSession) {
@@ -129,7 +139,11 @@ export class DouyinPlatform
     return this.mainPage
   }
 
-  startCommentListener(onComment: (comment: LiveMessage) => void, source: 'control' | 'compass') {
+  startCommentListener(
+    onComment: (comment: LiveMessage) => void,
+    source: 'control' | 'compass',
+    onEnded?: (reason: string) => void,
+  ) {
     Result.pipe(
       ensurePage(this.mainPage),
       Result.map(page => {
@@ -142,7 +156,7 @@ export class DouyinPlatform
           listener.setHostAccountName(this.accountName)
           this.commentListener = listener
         }
-        return this.commentListener.startCommentListener(onComment, source)
+        return this.commentListener.startCommentListener(onComment, source, onEnded)
       }),
       Result.unwrap(),
     )
@@ -150,6 +164,21 @@ export class DouyinPlatform
 
   stopCommentListener(): void {
     this.commentListener?.stopCommentListener()
+  }
+
+  startLiveEndedWatch(onEnded: (reason: string) => void) {
+    this.stopLiveEndedWatch()
+    const page = ensurePage(this.mainPage)
+    if (Result.isFailure(page)) {
+      throw page.error
+    }
+    this.liveEndedWatcher = new DouyinLiveEndedWatcher(page.value)
+    this.liveEndedWatcher.start(onEnded)
+  }
+
+  stopLiveEndedWatch() {
+    this.liveEndedWatcher?.stop()
+    this.liveEndedWatcher = null
   }
 
   getCommentListenerPage(): Page {

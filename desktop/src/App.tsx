@@ -7,14 +7,17 @@ import LogDisplayer from '@/components/common/LogDisplayer'
 import Sidebar from '@/components/common/Sidebar'
 import { TaskStatusBar } from '@/components/common/TaskStatusBar'
 import { Toaster } from '@/components/ui/toaster'
+import { QuickStartDialog } from './components/onboarding/QuickStartDialog'
 import { UpdateDialog } from './components/update/UpdateDialog'
 import { useAccounts } from './hooks/useAccounts'
 import { useAutoMessageStore } from './hooks/useAutoMessage'
 import { useAutoPopUpStore } from './hooks/useAutoPopUp'
 import { useAutoReply, useAutoReplyStore } from './hooks/useAutoReply'
+import { useReplyTaskCommentListener } from './hooks/useCommentListener'
 import { useChromeConfigStore } from './hooks/useChromeConfig'
 import { useIpcListener } from './hooks/useIpc'
 import { useLiveControlStore } from './hooks/useLiveControl'
+import { useOnboardingStore } from './hooks/useOnboarding'
 import { useToast } from './hooks/useToast'
 import { useUpdateConfigStore, useUpdateStore } from './hooks/useUpdate'
 // v1.2 暂缓：语音读稿播放器
@@ -40,10 +43,8 @@ function useGlobalIpcListener() {
     setIsRunningAutoMessage(accountId, false)
     setIsRunningAutoPopUp(accountId, false)
     setIsListening(accountId, 'stopped')
-    // 异常断连保留自动回复开关：监听恢复后可继续回复
-    if (reason !== 'unexpected') {
-      useAutoReplyStore.getState().setIsRunning(accountId, false)
-    }
+    // 界面一律停掉；异常断连的 desired 仍保留，重连后由 tasksResumed 恢复
+    useAutoReplyStore.getState().setIsRunning(accountId, false)
 
     const name = useAccounts.getState().accounts.find(a => a.id === accountId)?.name
     const prefix = name ? `「${name}」` : ''
@@ -60,7 +61,13 @@ function useGlobalIpcListener() {
     for (const type of tasks) {
       if (type === 'auto-comment') setIsRunningAutoMessage(accountId, true)
       if (type === 'auto-popup') setIsRunningAutoPopUp(accountId, true)
-      if (type === 'comment-listener') setIsListening(accountId, 'listening')
+      if (type === 'comment-listener') {
+        setIsListening(accountId, 'listening')
+        useAutoReplyStore.getState().setIsRunning(accountId, true)
+      }
+    }
+    if (tasks.length > 0) {
+      useOnboardingStore.getState().markStartedTaskOnce()
     }
     const name = useAccounts.getState().accounts.find(a => a.id === accountId)?.name
     toast.success(
@@ -70,20 +77,42 @@ function useGlobalIpcListener() {
 
   useIpcListener(IPC_CHANNELS.tasks.autoMessage.stoppedEvent, ({ accountId, reason }) => {
     setIsRunningAutoMessage(accountId, false)
-    if (reason !== 'error') return
+    if (reason !== 'error' && reason !== 'live_ended') return
     const name = useAccounts.getState().accounts.find(a => a.id === accountId)?.name
-    toast.error(name ? `「${name}」自动发言已停止，可重新启动` : '自动发言已停止，可重新启动')
+    const prefix = name ? `「${name}」` : ''
+    if (reason === 'live_ended') {
+      toast.info(`${prefix}检测到直播已结束，自动发言已停止`)
+      return
+    }
+    toast.error(`${prefix}自动发言已停止，可重新启动`)
   })
 
   useIpcListener(IPC_CHANNELS.tasks.autoPopUp.stoppedEvent, ({ accountId, reason }) => {
     setIsRunningAutoPopUp(accountId, false)
-    if (reason !== 'error') return
+    if (reason !== 'error' && reason !== 'live_ended') return
     const name = useAccounts.getState().accounts.find(a => a.id === accountId)?.name
-    toast.error(name ? `「${name}」自动弹窗已停止，可重新启动` : '自动弹窗已停止，可重新启动')
+    const prefix = name ? `「${name}」` : ''
+    if (reason === 'live_ended') {
+      toast.info(`${prefix}检测到直播已结束，自动弹窗已停止`)
+      return
+    }
+    toast.error(`${prefix}自动弹窗已停止，可重新启动`)
   })
 
-  useIpcListener(IPC_CHANNELS.tasks.autoReply.listenerStopped, ({ accountId }) => {
-    setIsListening(accountId, 'stopped')
+  useIpcListener(IPC_CHANNELS.tasks.autoReply.listenerStopped, ({ accountId, reason }) => {
+    // 异常停止标为 error，避免自动重试；手动/会话/停播仍为 stopped
+    setIsListening(accountId, reason === 'error' ? 'error' : 'stopped')
+    if (reason !== 'error' && reason !== 'live_ended') return
+    const wasRunning = useAutoReplyStore.getState().contexts[accountId]?.isRunning === true
+    useAutoReplyStore.getState().setIsRunning(accountId, false)
+    if (!wasRunning) return
+    const name = useAccounts.getState().accounts.find(a => a.id === accountId)?.name
+    const prefix = name ? `「${name}」` : ''
+    if (reason === 'live_ended') {
+      toast.info(`${prefix}检测到直播已结束，自动回复已停止`)
+      return
+    }
+    toast.error(`${prefix}评论监听已停止，自动回复已结束`)
   })
 
   useIpcListener(IPC_CHANNELS.chrome.saveState, id => {
@@ -106,7 +135,7 @@ function useGlobalIpcListener() {
     if (autoUpdate) {
       handleAutoUpdate(info, getDownloadSource())
       if (notifyEnabled) {
-      toast.info(`发现新版本 v${info.latestVersion}，正在后台下载…`, {
+        toast.info(`发现新版本 v${info.latestVersion}，正在后台下载…`, {
           title: '软件更新',
         })
       }
@@ -129,6 +158,7 @@ function App() {
   }, [accounts, currentAccountId])
 
   useGlobalIpcListener()
+  useReplyTaskCommentListener()
   // useVoiceBroadcastPlayer()
 
   return (
@@ -137,9 +167,9 @@ function App() {
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar />
 
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <TaskStatusBar />
-            <main className="flex-1 overflow-y-auto p-8">
+            <main className="min-h-0 flex-1 overflow-y-auto px-8 pb-10 pt-6">
               <Outlet />
             </main>
             <div className="h-[180px] shrink-0 border-t bg-white shadow-inner">
@@ -151,6 +181,7 @@ function App() {
         </div>
       </div>
       <UpdateDialog />
+      <QuickStartDialog />
       <LicenseAccountGuard />
       <Toaster />
     </>

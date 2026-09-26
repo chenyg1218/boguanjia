@@ -8,6 +8,32 @@ import {
 import { commonElementFinder, type IElementFinder } from '../IElementFinder'
 import { SELECTORS } from './constant'
 
+const GOODS_ITEM_SELECTORS = [
+  SELECTORS.GOODS_ITEM,
+  '.commodity-list-wrap .table-row-wrap',
+  '.table-body-wrap .table-row-wrap',
+] as const
+
+const GOODS_SCROLL_SELECTORS = [
+  '.commodity-list-wrap .table-body-wrap',
+  '.commodity-list-wrap',
+] as const
+
+async function queryHandles(page: Page, selector: string) {
+  if (page.isClosed()) return []
+  let best: ElementHandle<SVGElement | HTMLElement>[] = []
+  for (const frame of page.frames()) {
+    const found = await frame.$$(selector).catch(() => [])
+    if (found.length > best.length) best = found
+  }
+  return best
+}
+
+async function queryFirstHandle(page: Page, selector: string) {
+  const handles = await queryHandles(page, selector)
+  return handles[0] ?? null
+}
+
 type WechatChannelElementFinder = IElementFinder & {
   getNewCommentButton(page: Page): Result.ResultAsync<Locator, PlatformError>
   getComments(page: Page): Result.ResultAsync<Locator[], PlatformError>
@@ -17,15 +43,21 @@ type WechatChannelElementFinder = IElementFinder & {
 export const wechatChannelElementFinder: WechatChannelElementFinder = {
   async getPopUpButtonFromGoodsItem(item: ElementHandle<SVGElement | HTMLElement>) {
     const button = await item.$(SELECTORS.goodsItem.POPUP_BUTTON)
-    if (!button) {
-      return Result.fail(
-        new ElementNotFoundError({
-          elementName: '讲解按钮',
-          selector: SELECTORS.goodsItem.POPUP_BUTTON,
-        }),
-      )
+    if (button) return Result.succeed(button)
+
+    const candidates = await item.$$('span, button, a').catch(() => [])
+    for (const candidate of candidates) {
+      const text = ((await candidate.textContent().catch(() => '')) ?? '').replace(/\s+/g, '')
+      if (text === '讲解' || text === '结束讲解' || text === '开始讲解') {
+        return Result.succeed(candidate)
+      }
     }
-    return Result.succeed(button)
+    return Result.fail(
+      new ElementNotFoundError({
+        elementName: '讲解按钮',
+        selector: SELECTORS.goodsItem.POPUP_BUTTON,
+      }),
+    )
   },
 
   async getIdFromGoodsItem(item: ElementHandle<SVGElement | HTMLElement>) {
@@ -34,31 +66,42 @@ export const wechatChannelElementFinder: WechatChannelElementFinder = {
   },
 
   async getCurrentGoodsItemsList(page: Page) {
-    const itemsList = await commonElementFinder.getCurrentGoodsItemsList(page, SELECTORS.GOODS_ITEM)
-    if (Result.isFailure(itemsList)) {
-      return itemsList
+    let items: ElementHandle<SVGElement | HTMLElement>[] = []
+    for (const selector of GOODS_ITEM_SELECTORS) {
+      items = await queryHandles(page, selector)
+      if (items.length > 0) break
     }
-    if (itemsList.value.length <= 1) {
-      return Result.succeed(itemsList.value)
+    if (items.length === 0) {
+      return Result.fail(
+        new ElementNotFoundError({
+          elementName: '商品列表',
+          selector: SELECTORS.GOODS_ITEM,
+        }),
+      )
+    }
+    if (items.length <= 1) {
+      return Result.succeed(items)
     }
     return Result.pipe(
       Result.sequence([
-        this.getIdFromGoodsItem(itemsList.value[0]),
-        this.getIdFromGoodsItem(itemsList.value[itemsList.value.length - 1]),
+        this.getIdFromGoodsItem(items[0]),
+        this.getIdFromGoodsItem(items[items.length - 1]),
       ]),
       Result.andThen(([firstIdValue, lastIdValue]) => {
         // 视频号可能是倒序的，需要转成正序
         if (firstIdValue > lastIdValue) {
-          itemsList.value.reverse()
+          items.reverse()
         }
-        // 暂时不用担心倒序可能会对后面的滚动查找元素有影响，因为视频号似乎没有虚拟列表，能把所有商品全部加载进来
-        return Result.succeed(itemsList.value)
+        return Result.succeed(items)
       }),
     )
   },
 
-  async getGoodsItemsScrollContainer() {
-    // 视频号没有虚拟列表，且直接遍历所有元素，按理说不会触发这个函数
+  async getGoodsItemsScrollContainer(page: Page) {
+    for (const selector of GOODS_SCROLL_SELECTORS) {
+      const container = await queryFirstHandle(page, selector)
+      if (container) return Result.succeed(container)
+    }
     return Result.fail(new ElementNotFoundError({ elementName: '商品列表' }))
   },
 
@@ -69,8 +112,12 @@ export const wechatChannelElementFinder: WechatChannelElementFinder = {
   },
 
   async getClickableSubmitCommentButton(page: Page) {
-    const button = await page.$(SELECTORS.commentInput.SUBMIT_BUTTON)
-    if (!button) {
+    // 评论区在 wujie iframe 内，不能用 page.$（只会查主文档）
+    const button = page
+      .locator(SELECTORS.LIVE_CONTROL_IFRAME)
+      .locator(SELECTORS.commentInput.SUBMIT_BUTTON)
+      .first()
+    if ((await button.count()) === 0) {
       return Result.fail(
         new ElementNotFoundError({
           elementName: '发送按钮',
@@ -78,8 +125,12 @@ export const wechatChannelElementFinder: WechatChannelElementFinder = {
         }),
       )
     }
+    const className = (await button.getAttribute('class')) ?? ''
+    const disabledAttr = await button.getAttribute('disabled')
     if (
-      (await button.getAttribute('class'))?.includes(SELECTORS.commentInput.SUBMIT_BUTTON_DISABLED)
+      className.includes(SELECTORS.commentInput.SUBMIT_BUTTON_DISABLED) ||
+      disabledAttr !== null ||
+      (await button.isDisabled().catch(() => false))
     ) {
       return Result.fail(
         new ElementDisabledError({
@@ -88,7 +139,16 @@ export const wechatChannelElementFinder: WechatChannelElementFinder = {
         }),
       )
     }
-    return Result.succeed(button)
+    const handle = await button.elementHandle()
+    if (!handle) {
+      return Result.fail(
+        new ElementNotFoundError({
+          elementName: '发送按钮',
+          selector: SELECTORS.commentInput.SUBMIT_BUTTON,
+        }),
+      )
+    }
+    return Result.succeed(handle)
   },
 
   async getPinTopLabel() {

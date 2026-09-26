@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS machines (
   expires_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   revoked INTEGER NOT NULL DEFAULT 0,
-  plan TEXT NOT NULL DEFAULT 'flagship'
+  plan TEXT NOT NULL DEFAULT 'flagship',
+  bound_platform TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status);

@@ -52,7 +52,7 @@ const GoodsListItem = React.memo(function GoodsListItem({
         title="循环弹窗次数"
       />
       <span className="text-xs text-muted-foreground whitespace-nowrap">次</span>
-      <span className="text-xs text-muted-foreground whitespace-nowrap ml-1">间隔</span>
+      <span className="text-xs text-muted-foreground whitespace-nowrap ml-1">时长</span>
       <Input
         type="number"
         value={intervalMin}
@@ -61,7 +61,7 @@ const GoodsListItem = React.memo(function GoodsListItem({
         min="0"
         max="20000"
         placeholder="最小"
-        title="单品弹窗间隔最小值（秒），0 表示用全局间隔"
+        title="单品讲解时长最小值（秒），0 表示用每品讲解时长"
       />
       <span className="text-xs text-muted-foreground">~</span>
       <Input
@@ -72,7 +72,7 @@ const GoodsListItem = React.memo(function GoodsListItem({
         min="0"
         max="20000"
         placeholder="最大"
-        title="单品弹窗间隔最大值（秒），0 表示用全局间隔"
+        title="单品讲解时长最大值（秒），0 表示用每品讲解时长"
       />
       <span className="text-xs text-muted-foreground whitespace-nowrap">秒</span>
       <Button

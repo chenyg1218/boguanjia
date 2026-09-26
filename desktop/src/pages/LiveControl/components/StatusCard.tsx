@@ -1,12 +1,31 @@
 import { useMemoizedFn } from 'ahooks'
-import { CheckIcon, CircleAlert, GlobeIcon, XIcon } from 'lucide-react'
-import React, { useState } from 'react'
+import {
+  Cable,
+  CheckIcon,
+  CircleAlert,
+  GlobeIcon,
+  Loader2,
+  XIcon,
+} from 'lucide-react'
+import React, { useRef, useState } from 'react'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
+import { platformDisplayName } from 'shared/platforms'
+import { WizardHighlight } from '@/components/onboarding/WizardTarget'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
+import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { DISABLED_ACCOUNT_HINT } from '@/constants/copy'
 import { useAccounts } from '@/hooks/useAccounts'
 import {
@@ -14,8 +33,11 @@ import {
   useCurrentChromeConfig,
   useCurrentChromeConfigActions,
 } from '@/hooks/useChromeConfig'
+import { useLicense } from '@/hooks/useLicense'
 import { useCurrentLiveControl, useCurrentLiveControlActions } from '@/hooks/useLiveControl'
+import { useOnboardingStore } from '@/hooks/useOnboarding'
 import { useToast } from '@/hooks/useToast'
+import { cn } from '@/lib/utils'
 import PlatformSelect from './PlatformSelect'
 
 const StatusAlert = React.memo(() => {
@@ -65,23 +87,27 @@ const StatusAlert = React.memo(() => {
 
 const StatusCard = React.memo(() => {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>控制台状态</CardTitle>
-        <CardDescription>选好平台后点「连接」，在弹出的浏览器里扫码登录</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <ConnectState />
-            <div className="flex items-center gap-2">
-              <PlatformSelect />
-              <ConnectToLiveControl />
-            </div>
-          </div>
-          <StatusAlert />
-          <Separator />
+    <Card className="border-foreground/15 shadow-md">
+      <CardContent className="p-6 sm:p-7">
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <div className="text-lg font-bold tracking-tight text-foreground">控制台状态</div>
           <HeadlessSetting />
+        </div>
+
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <ConnectState />
+          <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+            <WizardHighlight targetId="live-platform" className="inline-flex shrink-0">
+              <PlatformSelect />
+            </WizardHighlight>
+            <WizardHighlight targetId="live-connect" className="inline-flex shrink-0">
+              <ConnectToLiveControl />
+            </WizardHighlight>
+          </div>
+        </div>
+
+        <div className="mt-5 empty:mt-0 empty:hidden">
+          <StatusAlert />
         </div>
       </CardContent>
     </Card>
@@ -96,11 +122,51 @@ const ConnectToLiveControl = React.memo(() => {
   const storageState = useCurrentChromeConfig(context => context.storageState)
   let headless = useCurrentChromeConfig(context => context.headless)
   const account = useAccounts(store => store.getCurrentAccount())
+  const confirmPlatformBind = useLicense(s => s.confirmPlatformBind)
   const { toast } = useToast()
+  const [bindDialogOpen, setBindDialogOpen] = useState(false)
+  const [pendingBindPlatform, setPendingBindPlatform] = useState<LiveControlPlatform | null>(null)
+  const [bindBusy, setBindBusy] = useState(false)
+  const bindConfirmedRef = useRef(false)
+  const bindCancelRequestedRef = useRef(false)
+  const bindDialogShownRef = useRef(false)
 
   if (platform === 'taobao') {
     headless = false
   }
+
+  const openBindDialog = useMemoizedFn((plat: LiveControlPlatform) => {
+    if (bindDialogShownRef.current) return
+    bindConfirmedRef.current = false
+    bindCancelRequestedRef.current = false
+    bindDialogShownRef.current = true
+    setPendingBindPlatform(plat)
+    setBindDialogOpen(true)
+  })
+
+  const disconnectLiveControl = useMemoizedFn(async (opts?: { silent?: boolean }) => {
+    if (!account) {
+      if (!opts?.silent) toast.error('当前账号无效，请在右侧账号栏重新选择')
+      return
+    }
+    try {
+      const result = await window.ipcRenderer.invoke(
+        IPC_CHANNELS.tasks.liveControl.disconnect,
+        account.id,
+      )
+      if (result && typeof result === 'object' && 'ok' in result && !result.ok) {
+        if (!opts?.silent) toast.error(result.error || '断开连接失败，可重启应用后再试')
+        return
+      }
+      if (!opts?.silent) toast.success('已断开连接')
+    } catch (error) {
+      if (!opts?.silent) {
+        toast.error(error instanceof Error ? error.message : '断开连接失败，可重启应用后再试')
+      }
+    } finally {
+      setIsConnected('disconnected')
+    }
+  })
 
   const connectLiveControl = useMemoizedFn(async () => {
     try {
@@ -112,6 +178,8 @@ const ConnectToLiveControl = React.memo(() => {
         toast.error(DISABLED_ACCOUNT_HINT)
         return
       }
+      bindCancelRequestedRef.current = false
+      bindDialogShownRef.current = false
       setIsConnected('connecting')
       // storageState 仅用于旧版 localStorage → 主进程加密存储的一次性迁移
       const result = await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.liveControl.connect, {
@@ -122,63 +190,133 @@ const ConnectToLiveControl = React.memo(() => {
         account,
       })
 
+      if (bindCancelRequestedRef.current) {
+        setIsConnected('disconnected')
+        return
+      }
+
       if (result.ok) {
         setIsConnected('connected')
+        useOnboardingStore.getState().markConnectedOnce()
         if (storageState) {
           useChromeConfigStore.getState().clearStorageState(account.id)
         }
-        toast.success('已连接到直播控制台')
+        if (result.needsPlatformBindConfirm) {
+          openBindDialog(platform)
+          return
+        }
+        if (!bindConfirmedRef.current) {
+          toast.success('已连接到直播控制台')
+        }
       } else {
         throw new Error(result.error || '连接直播控制台失败')
       }
     } catch (error) {
+      setBindDialogOpen(false)
+      setPendingBindPlatform(null)
+      bindDialogShownRef.current = false
       setIsConnected('disconnected')
       toast.error(error instanceof Error ? error.message : '连接直播控制台失败')
     }
   })
 
-  const disconnectLiveControl = useMemoizedFn(async () => {
-    if (!account) {
-      toast.error('当前账号无效，请在右侧账号栏重新选择')
+  const handleConfirmBind = useMemoizedFn(async () => {
+    if (!pendingBindPlatform) return
+    setBindBusy(true)
+    try {
+      const result = await confirmPlatformBind(pendingBindPlatform)
+      if (result.ok) {
+        bindConfirmedRef.current = true
+        setBindDialogOpen(false)
+        setPendingBindPlatform(null)
+        bindDialogShownRef.current = false
+        toast.success(result.message || '已连接到直播控制台')
+      } else {
+        toast.error(result.message)
+      }
+    } finally {
+      setBindBusy(false)
+    }
+  })
+
+  const handleBindDialogOpenChange = useMemoizedFn((open: boolean) => {
+    if (open) {
+      setBindDialogOpen(true)
       return
     }
-    try {
-      const result = await window.ipcRenderer.invoke(
-        IPC_CHANNELS.tasks.liveControl.disconnect,
-        account.id,
-      )
-      if (result && typeof result === 'object' && 'ok' in result && !result.ok) {
-        toast.error(result.error || '断开连接失败，可重启应用后再试')
-        return
-      }
-      toast.success('已断开连接')
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '断开连接失败，可重启应用后再试')
-    } finally {
-      setIsConnected('disconnected')
+    setBindDialogOpen(false)
+    if (bindConfirmedRef.current) {
+      bindDialogShownRef.current = false
+      return
     }
+    if (!pendingBindPlatform) return
+    bindCancelRequestedRef.current = true
+    setPendingBindPlatform(null)
+    bindDialogShownRef.current = false
+    void (async () => {
+      await disconnectLiveControl({ silent: true })
+      toast.info('已取消绑定并断开连接，可更换平台后重新连接')
+    })()
   })
 
   const handleButtonClick = useMemoizedFn(() => {
     if (isConnected === 'connected') {
-      disconnectLiveControl()
+      void disconnectLiveControl()
     } else {
-      connectLiveControl()
+      void connectLiveControl()
     }
   })
 
-  return isConnected === 'connected' ? (
-    <DisconnectButton handleButtonClick={handleButtonClick} />
-  ) : (
-    <ConnectButton isLoading={isConnected === 'connecting'} handleButtonClick={handleButtonClick} />
+  const bindName = pendingBindPlatform ? platformDisplayName(pendingBindPlatform) : ''
+
+  return (
+    <>
+      {isConnected === 'connected' ? (
+        <DisconnectButton handleButtonClick={handleButtonClick} />
+      ) : (
+        <ConnectButton
+          isLoading={isConnected === 'connecting'}
+          handleButtonClick={handleButtonClick}
+        />
+      )}
+      <AlertDialog open={bindDialogOpen} onOpenChange={handleBindDialogOpenChange}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认绑定「{bindName}」？</AlertDialogTitle>
+            <AlertDialogDescription>
+              登录已成功。基础版 / 专业版绑定后只能用「{bindName}
+              」，换其它平台需开通旗舰版。点「再想想」会断开连接，且不绑定。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bindBusy}>再想想</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={bindBusy}
+              onClick={e => {
+                e.preventDefault()
+                void handleConfirmBind()
+              }}
+            >
+              {bindBusy ? '绑定中…' : '确认绑定'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 })
 
 const ConnectButton = React.memo(
   ({ isLoading, handleButtonClick }: { isLoading: boolean; handleButtonClick: () => void }) => {
     return (
-      <Button variant={'default'} onClick={handleButtonClick} disabled={isLoading} size="sm">
-        <GlobeIcon className="mr-2 h-4 w-4" />
+      <Button
+        className="h-12 px-6 text-base font-semibold shadow-sm"
+        variant="default"
+        onClick={handleButtonClick}
+        disabled={isLoading}
+        size="lg"
+      >
+        <GlobeIcon className="h-5 w-5" />
         {isLoading ? '连接中...' : '连接直播控制台'}
       </Button>
     )
@@ -189,20 +327,21 @@ const DisconnectButton = React.memo(({ handleButtonClick }: { handleButtonClick:
   const [isHovered, setIsHovered] = useState(false)
   return (
     <Button
+      className="h-12 px-6 text-base font-semibold"
       variant="secondary"
       onClick={handleButtonClick}
-      size="sm"
+      size="lg"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       {isHovered ? (
         <>
-          <XIcon className="mr-2 h-4 w-4" />
+          <XIcon className="h-5 w-5" />
           断开连接
         </>
       ) : (
         <>
-          <CheckIcon className="mr-2 h-4 w-4" />
+          <CheckIcon className="h-5 w-5" />
           已连接
         </>
       )}
@@ -213,24 +352,31 @@ const DisconnectButton = React.memo(({ handleButtonClick }: { handleButtonClick:
 const ConnectState = React.memo(() => {
   const isConnected = useCurrentLiveControl(context => context.isConnected)
   const accountName = useCurrentLiveControl(context => context.accountName)
-  const label =
+
+  const title =
+    isConnected === 'connected' ? '已连接' : isConnected === 'connecting' ? '连接中…' : '未连接'
+  const hint =
     isConnected === 'connected'
-      ? `已连接${accountName ? ` (${accountName})` : ''}`
+      ? accountName
+        ? `账号：${accountName}`
+        : '直播控制台已就绪'
       : isConnected === 'connecting'
-        ? '连接中…'
-        : '未连接'
+        ? '正在打开浏览器，请稍候'
+        : '请选择平台并连接直播控制台'
+
+  const StatusIcon = isConnected === 'connecting' ? Loader2 : Cable
+
   return (
-    <div className="flex items-center gap-4">
-      <div
-        className={`w-2 h-2 rounded-full ${
-          isConnected === 'connected'
-            ? 'bg-green-500'
-            : isConnected === 'connecting'
-              ? 'bg-sky-500 animate-pulse'
-              : 'bg-gray-300'
-        }`}
-      />
-      <span className="text-sm text-muted-foreground">{label}</span>
+    <div className="flex min-w-0 items-center gap-4">
+      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-foreground/10 bg-muted/50 text-foreground">
+        <StatusIcon
+          className={cn('h-6 w-6', isConnected === 'connecting' && 'animate-spin')}
+        />
+      </div>
+      <div className="min-w-0 space-y-1.5">
+        <div className="text-lg font-bold tracking-tight text-foreground">{title}</div>
+        <div className="truncate text-sm text-muted-foreground">{hint}</div>
+      </div>
     </div>
   )
 })
@@ -240,20 +386,33 @@ const HeadlessSetting = () => {
   const platform = useCurrentLiveControl(context => context.platform)
   const isConnected = useCurrentLiveControl(context => context.isConnected)
   const { setHeadless } = useCurrentChromeConfigActions()
+  const disabled = platform === 'taobao' || isConnected !== 'disconnected'
+
   return (
-    <div className="flex justify-between items-center">
-      <div>
-        <div className="text-sm">无头模式</div>
-        <div className="text-muted-foreground text-xs">
-          打开后不弹出浏览器窗口。第一次请先关掉，方便扫码登录；登录成功后再开。
-        </div>
-      </div>
-      <Switch
-        checked={headless && platform !== 'taobao'}
-        disabled={platform === 'taobao' || isConnected !== 'disconnected'}
-        onCheckedChange={v => setHeadless(v)}
-      />
-    </div>
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <label
+            className={cn(
+              'inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground/80',
+              disabled && 'cursor-not-allowed opacity-50',
+            )}
+          >
+            <span>无头</span>
+            <Switch
+              checked={headless && platform !== 'taobao'}
+              disabled={disabled}
+              onCheckedChange={v => setHeadless(v)}
+            />
+          </label>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs text-xs leading-5">
+          {platform === 'taobao'
+            ? '淘宝平台需关闭无头模式，以便完成人机验证。'
+            : '打开后不弹出浏览器窗口。第一次请先关掉，方便扫码登录；登录成功后再开。'}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 

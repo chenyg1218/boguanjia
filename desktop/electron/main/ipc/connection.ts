@@ -3,6 +3,7 @@ import { createLogger } from '#/logger'
 import { accountManager } from '#/managers/AccountManager'
 import { browserManager } from '#/managers/BrowserSessionManager'
 import { accountLicenseError } from '#/services/licenseGate'
+import { licenseService } from '#/services/LicenseService'
 import { friendlyError, typedIpcMainHandle } from '#/utils'
 
 const TASK_NAME = '中控台'
@@ -17,6 +18,10 @@ function setupIpcHandlers() {
         if (denied) {
           return { ok: false, error: denied }
         }
+        const platformDenied = licenseService.platformConnectError(platform)
+        if (platformDenied) {
+          return { ok: false, error: platformDenied }
+        }
         if (chromePath) {
           browserManager.setChromePath(chromePath)
         }
@@ -25,7 +30,10 @@ function setupIpcHandlers() {
           headless,
           storageState,
         })
-        return { ok: true }
+        return {
+          ok: true,
+          needsPlatformBindConfirm: licenseService.needsPlatformBindConfirm(),
+        }
       } catch (error) {
         const logger = createLogger(`@${account.name}`).scope(TASK_NAME)
         logger.error('连接直播控制台失败：', error)

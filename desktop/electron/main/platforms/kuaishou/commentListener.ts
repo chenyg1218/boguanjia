@@ -59,7 +59,12 @@ export class KuaishouCommentListener {
     }
   }
 
-  startCommentListener(onComment: (comment: LiveMessage) => void) {
+  startCommentListener(
+    onComment: (comment: LiveMessage) => void,
+    _source?: CommentListenerConfig['source'],
+    _onLiveEnded?: (reason: string) => void,
+  ) {
+    // 停播检测已上移到 KuaishouLiveEndedWatcher，由 AccountSession 统一调度
     this.handleComment = onComment
     this.isListening = true
     if (!this.isFunctionInjected) {
@@ -75,7 +80,7 @@ export class KuaishouCommentListener {
     this.isListening = false
   }
 
-  /** 监听期间周期性关掉开播提示 / 残留讲解确认，避免挡评论 */
+  /** 监听期间周期性关掉开播提示 / 残留讲解确认 */
   private async keepPageRunning() {
     if (this.keepAliveRunning) return
     this.keepAliveRunning = true

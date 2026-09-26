@@ -72,13 +72,26 @@ async function nativeSetCommentValue(
     (el, value) => {
       const input = el as HTMLTextAreaElement | HTMLInputElement
       input.focus()
+
+      // 视频号等 iframe/wujie 场景下，instanceof 会跨 realm 失败，误用 Input setter 触发 Illegal invocation
+      const tag = (input.tagName || '').toUpperCase()
+      const view = input.ownerDocument.defaultView
       const proto =
-        input instanceof HTMLTextAreaElement
-          ? window.HTMLTextAreaElement.prototype
-          : window.HTMLInputElement.prototype
+        tag === 'TEXTAREA'
+          ? (view?.HTMLTextAreaElement?.prototype ?? Object.getPrototypeOf(input))
+          : tag === 'INPUT'
+            ? (view?.HTMLInputElement?.prototype ?? Object.getPrototypeOf(input))
+            : Object.getPrototypeOf(input)
       const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
-      setter?.call(input, value)
-      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }))
+      if (setter) {
+        setter.call(input, value)
+      } else {
+        input.value = value
+      }
+
+      input.dispatchEvent(
+        new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }),
+      )
       input.dispatchEvent(new Event('change', { bubbles: true }))
     },
     message,
@@ -89,7 +102,8 @@ async function nativeSetCommentValue(
 async function fillCommentInput(textarea: CommentInput, message: string) {
   await textarea.click({ timeout: COMMENT_FILL_TIMEOUT_MS }).catch(() => undefined)
   await textarea.fill('', { timeout: COMMENT_FILL_TIMEOUT_MS }).catch(() => undefined)
-  await nativeSetCommentValue(textarea, message)
+  // native setter 失败时继续走 fill / 逐字输入，避免整条发言任务中断
+  await nativeSetCommentValue(textarea, message).catch(() => undefined)
 
   let current = ''
   try {
@@ -106,7 +120,7 @@ async function fillCommentInput(textarea: CommentInput, message: string) {
     current = ''
   }
   if (current === message) {
-    await nativeSetCommentValue(textarea, message)
+    await nativeSetCommentValue(textarea, message).catch(() => undefined)
     return
   }
 
@@ -352,7 +366,7 @@ export async function getItemFromVirtualScroller(
     if (Result.isFailure(scrollTarget)) {
       return scrollTarget
     }
-    await scrollTarget.value.scrollIntoViewIfNeeded({ timeout: 5000 })
+    await scrollTarget.value.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => undefined)
     await waitForNewItemsToLoad()
 
     // 2. 获取当前的滚动位置
@@ -460,6 +474,15 @@ export async function getAllGoodsIdsFromScroller(
   }
 
   if (seen.size === 0) {
+    const items = await elementFinder.getCurrentGoodsItemsList(page)
+    if (Result.isSuccess(items) && items.value.length > 0) {
+      return Result.fail(
+        new ElementContentMismatchedError({
+          current: '未能解析商品序号',
+          target: '数字序号',
+        }),
+      )
+    }
     return Result.fail(new ElementNotFoundError({ elementName: '商品列表' }))
   }
   return Result.succeed([...seen].sort((a, b) => a - b))

@@ -37,6 +37,9 @@ class BrowserSessionManager {
     return chromium.launch({
       headless,
       executablePath: path,
+      // 降低自动化特征：小红书千帆等直开中控时业务区易一直转圈
+      ignoreDefaultArgs: ['--enable-automation'],
+      args: ['--disable-blink-features=AutomationControlled'],
     })
   }
 
@@ -48,6 +51,7 @@ class BrowserSessionManager {
     const context = await browser.newContext({
       viewport: null, // 显式设置 null，关闭固定视口
       storageState,
+      locale: 'zh-CN',
     })
     const page = await context.newPage()
     return { browser, context, page }

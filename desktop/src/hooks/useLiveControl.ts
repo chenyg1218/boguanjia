@@ -27,7 +27,7 @@ function defaultContext(): LiveControlContext {
   return {
     isConnected: 'disconnected',
     accountName: null,
-    platform: 'kuaishou',
+    platform: 'douyin',
   }
 }
 

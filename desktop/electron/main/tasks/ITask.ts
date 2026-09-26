@@ -9,6 +9,8 @@ export enum TaskStopReason {
   MANUAL = 'manual',
   /** 会话断开导致停止（不视为用户取消意图） */
   SESSION = 'session',
+  /** 直播已结束（中控仍可能连着，但跟播应停止） */
+  LIVE_ENDED = 'live_ended',
 }
 
 export type TaskStopCallback = (id: string, reason: TaskStopReason, error?: unknown) => void

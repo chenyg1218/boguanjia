@@ -78,6 +78,7 @@ interface AppMsgPayload {
 export class WeChatChannelCommentListener implements ICommentListener {
   private handleComment: (comment: WechatChannelLiveMessage) => void = () => {}
   private hostAccountName = ''
+
   constructor(private page: Page) {
     this.handleResponse = this.handleResponse.bind(this)
   }
@@ -91,55 +92,63 @@ export class WeChatChannelCommentListener implements ICommentListener {
     return this.page
   }
 
-  private isHostMessage(nickName: string, liveIdentity?: number) {
-    // liveIdentity === 1 在视频号直播里通常表示主播身份（启发式）
-    if (liveIdentity === 1) return true
-    return Boolean(this.hostAccountName && nickName.trim() === this.hostAccountName)
+  private isHostMessage(nickName: string) {
+    // liveIdentity === 1 是观众的微信身份，不是主播；不能用来跳过回复
+    const nick = nickName.trim()
+    return Boolean(this.hostAccountName && nick === this.hostAccountName)
   }
 
   private async handleResponse(resp: Response) {
-    const url = resp.url()
-    if (!url.includes(URLS.MSG_API_PREFIX)) return
-    const body = (await resp.json()) as MsgResponse
-    if (body.errCode !== 0) return
-    body.data.msgList.forEach(msg => {
-      if (msg.type !== 1) return
-      const nick_name = msg.nickname
-      const message: WechatChannelLiveMessage = {
-        msg_type: 'wechat_channel_live_msg',
-        msg_id: msg.clientMsgId,
-        nick_name,
-        user_id: msg.username,
-        content: msg.content,
-        time: Date.now(),
-        is_host: this.isHostMessage(nick_name, msg.finderLiveContact?.liveIdentity),
+    try {
+      const url = resp.url()
+      if (!url.includes(URLS.MSG_API_PREFIX)) return
+      const body = (await resp.json()) as MsgResponse
+      if (body.errCode !== 0 || !body.data) return
+      for (const msg of body.data.msgList ?? []) {
+        if (msg.type !== 1) continue
+        const nick_name = msg.nickname
+        const message: WechatChannelLiveMessage = {
+          msg_type: 'wechat_channel_live_msg',
+          msg_id: msg.clientMsgId,
+          nick_name,
+          user_id: msg.username,
+          content: msg.content,
+          time: Date.now(),
+          is_host: this.isHostMessage(nick_name),
+        }
+        this.handleComment(message)
       }
-      this.handleComment(message)
-    })
-    // 处理回复消息，这里的回复是通过点击评论的回复按钮触发的
-    body.data.appMsgList.forEach(msg => {
-      if (msg.msgType !== 20002) return
-      const payload = JSON.parse(
-        Buffer.from(msg.payload, 'base64').toString('utf-8'),
-      ) as AppMsgPayload
-      const content = payload.content
-      const nick_name = msg.fromUserContact.contact.nickname
-      const message: WechatChannelLiveMessage = {
-        msg_type: 'wechat_channel_live_msg',
-        msg_id: msg.clientMsgId,
-        nick_name,
-        user_id: msg.fromUserContact.contact.usename,
-        content,
-        time: Date.now(),
-        is_host: this.isHostMessage(nick_name),
+      // 处理回复消息，这里的回复是通过点击评论的回复按钮触发的
+      for (const msg of body.data.appMsgList ?? []) {
+        if (msg.msgType !== 20002) continue
+        const payload = JSON.parse(
+          Buffer.from(msg.payload, 'base64').toString('utf-8'),
+        ) as AppMsgPayload
+        const content = payload.content
+        const nick_name = msg.fromUserContact.contact.nickname
+        const message: WechatChannelLiveMessage = {
+          msg_type: 'wechat_channel_live_msg',
+          msg_id: msg.clientMsgId,
+          nick_name,
+          user_id: msg.fromUserContact.contact.usename,
+          content,
+          time: Date.now(),
+          is_host: this.isHostMessage(nick_name),
+        }
+        this.handleComment(message)
       }
-      this.handleComment(message)
-    })
+    } catch {
+      // 单条响应解析失败不影响后续评论
+    }
   }
 
-  public startCommentListener(onComment: (comment: WechatChannelLiveMessage) => void) {
+  public startCommentListener(
+    onComment: (comment: WechatChannelLiveMessage) => void,
+    _source?: CommentListenerConfig['source'],
+    _onLiveEnded?: (reason: string) => void,
+  ) {
+    // 停播检测已上移到 WeChatChannelLiveEndedWatcher，由 AccountSession 统一调度
     this.handleComment = onComment
-    // 开始监听评论
     this.page.on('response', this.handleResponse)
   }
 

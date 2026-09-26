@@ -1,18 +1,21 @@
 import { Title } from '@/components/common/Title'
 import InstructionsCard from './components/InstructionsCard'
 import StatusCard from './components/StatusCard'
+import { LiveControlSpotlightProvider } from './LiveControlSpotlight'
 
 export default function BrowserControl() {
   return (
-    <div className="container py-8 space-y-4">
-      <div>
-        <Title title="直播控制台" description="先连上平台后台，后面的自动发言、弹窗、回复才能用。" />
-      </div>
+    <LiveControlSpotlightProvider>
+      <div className="container space-y-6 pt-4">
+        <div>
+          <Title title="直播控制台" description="连接直播后台后，才能使用自动发言、弹窗、回复。" />
+        </div>
 
-      <div className="space-y-8">
-        <StatusCard />
-        <InstructionsCard />
+        <div className="space-y-6">
+          <StatusCard />
+          <InstructionsCard />
+        </div>
       </div>
-    </div>
+    </LiveControlSpotlightProvider>
   )
 }

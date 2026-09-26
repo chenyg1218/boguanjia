@@ -18,6 +18,14 @@ export function createCommentListenerTask(
 ) {
   const logger = _logger.scope(TASK_NAME)
   let wsService: WebSocketService | null
+  // createTask 之后赋值；停播回调只在 start 之后触发
+  let task: ReturnType<typeof createTask>
+
+  function handleListenerEnded(reason: string) {
+    if (!task?.isRunning()) return
+    logger.warn(`评论监听结束：${reason}`)
+    task.stop(TaskStopReason.LIVE_ENDED)
+  }
 
   async function execute() {
     try {
@@ -29,7 +37,7 @@ export function createCommentListenerTask(
           wsService = null
         })
       }
-      await platform.startCommentListener(broadcastMessage, config.source)
+      await platform.startCommentListener(broadcastMessage, config.source, handleListenerEnded)
       logger.info('开始监听评论')
     } catch (err) {
       // 失败了还要告诉渲染层关闭按钮
@@ -79,12 +87,12 @@ export function createCommentListenerTask(
     if (cfg.source && config.source !== cfg.source) {
       config.source = cfg.source
       platform.stopCommentListener()
-      platform.startCommentListener(broadcastMessage, cfg.source)
+      platform.startCommentListener(broadcastMessage, cfg.source, handleListenerEnded)
     }
     return Result.succeed()
   }
 
-  const task = createTask(
+  task = createTask(
     {
       taskName: TASK_NAME,
       logger,

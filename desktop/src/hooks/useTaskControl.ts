@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { DISABLED_ACCOUNT_HINT, TASK_TYPE_LABEL } from '@/constants/copy'
 import { useAccounts } from './useAccounts'
+import { useOnboardingStore } from './useOnboarding'
 import { useToast } from './useToast'
 
 /**
@@ -75,13 +76,12 @@ export function useTaskControl<T extends TaskType>(params: UseTaskControlParams<
 
     if (result.ok) {
       setIsRunning(true)
+      useOnboardingStore.getState().markStartedTaskOnce()
       toast.success(startSuccessMessage || `${label}已启动`)
     } else {
       setIsRunning(false)
       toast.error(
-        result.error ||
-          startFailureMessage ||
-          `${label}启动失败。请确认已连接直播控制台后重试`,
+        result.error || startFailureMessage || `${label}启动失败。请确认已连接直播控制台后重试`,
       )
     }
   }, [

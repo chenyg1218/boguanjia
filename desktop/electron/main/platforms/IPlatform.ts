@@ -8,6 +8,8 @@ export interface ICommentListener {
   startCommentListener(
     onComment: (comment: LiveMessage) => void,
     source: CommentListenerConfig['source'],
+    /** 平台检测到停播等不可恢复情况时回调，由任务侧停止监听 */
+    onEnded?: (reason: string) => void,
   ): void | Promise<void>
   stopCommentListener(): void
   getCommentListenerPage(): Page
@@ -25,6 +27,13 @@ export interface IPerformPopup {
   getPopupPage(): Page | null
   /** 从中控台商品列表扫描全部序号（可选；虚拟列表会滚动采集） */
   listGoodsIds?(): Result.ResultAsync<number[], Error>
+  /**
+   * 观众侧商品卡最长展示时长（毫秒）。
+   * 有值时，自动弹窗任务会在「每品讲解时长」内按此间隔续点弹卡。
+   */
+  getPopupCardVisibleMs?(): number | null
+  /** 在仍讲解该品时再次弹出商品卡（不切换讲解） */
+  refreshPopupCard?(id: number, signal?: AbortSignal): Result.ResultAsync<void, Error>
 }
 
 export function isPerformPopup(platform: IPlatform): platform is IPlatform & IPerformPopup {
@@ -41,6 +50,21 @@ export interface IPerformComment {
 
 export function isPerformComment(platform: IPlatform): platform is IPlatform & IPerformComment {
   return '_isPerformComment' in platform && platform._isPerformComment === true
+}
+
+/**
+ * 独立于评论监听的停播检测。
+ * 有实现时由 AccountSession 在跟播任务运行期间启动，
+ * 这样仅开自动发言 / 自动弹窗也能在停播后停止。
+ */
+export interface ILiveEndedWatch {
+  _isLiveEndedWatch: true
+  startLiveEndedWatch(onEnded: (reason: string) => void): void
+  stopLiveEndedWatch(): void
+}
+
+export function isLiveEndedWatch(platform: IPlatform): platform is IPlatform & ILiveEndedWatch {
+  return '_isLiveEndedWatch' in platform && platform._isLiveEndedWatch === true
 }
 
 export interface IPinComment {

@@ -1,5 +1,6 @@
 import { Result } from '@praha/byethrow'
 import type { Page } from 'playwright'
+import { UnexpectedError } from '#/errors/AppError'
 import { ElementContentMismatchedError, type PlatformError } from '#/errors/PlatformError'
 import type { BrowserSession } from '#/managers/BrowserSessionManager'
 import {
@@ -12,6 +13,7 @@ import {
 } from '../helper'
 import type {
   ICommentListener,
+  ILiveEndedWatch,
   IPerformComment,
   IPerformPopup,
   IPinComment,
@@ -20,6 +22,11 @@ import type {
 import { WeChatChannelCommentListener } from './commentListener'
 import { REGEXPS, SELECTORS, TEXT, URLS } from './constant'
 import { wechatChannelElementFinder as elementFinder } from './element-finder'
+import { WeChatChannelLiveEndedWatcher } from './liveEndedWatcher'
+import {
+  dismissWechatChannelModals,
+  dismissWechatChannelModalsUntilGone,
+} from './overlays'
 
 const PLATFORM_NAME = '微信视频号' as const
 
@@ -27,16 +34,24 @@ const PLATFORM_NAME = '微信视频号' as const
  * 微信视频号
  */
 export class WechatChannelPlatform
-  implements IPlatform, IPerformPopup, IPerformComment, ICommentListener, IPinComment
+  implements
+    IPlatform,
+    IPerformPopup,
+    IPerformComment,
+    ICommentListener,
+    IPinComment,
+    ILiveEndedWatch
 {
   readonly _isPinComment = true
   readonly _isCommentListener = true
   readonly _isPerformComment = true
   readonly _isPerformPopup = true
+  readonly _isLiveEndedWatch = true
   private mainPage: Page | null = null
   /** 商品列表页面 */
   private productsPage: Page | null = null
   private commentListener: WeChatChannelCommentListener | null = null
+  private liveEndedWatcher: WeChatChannelLiveEndedWatcher | null = null
   private accountName = ''
   async connect(session: BrowserSession) {
     const { page } = session
@@ -69,7 +84,9 @@ export class WechatChannelPlatform
     if (isConnected) {
       this.mainPage = page
       this.productsPage = await session.context.newPage()
-      await this.productsPage.goto(URLS.PRODUCTS_PAGE)
+      await this.productsPage.goto(URLS.PRODUCTS_PAGE, { waitUntil: 'domcontentloaded' })
+      // 「直播间讲解支持送礼物模式」会挡住商品列表
+      await dismissWechatChannelModalsUntilGone(this.productsPage)
     }
     return isConnected
   }
@@ -96,14 +113,38 @@ export class WechatChannelPlatform
     return this.accountName
   }
 
+  /** 商品页被关掉或还没打开时重新打开，避免弹窗直接报页面已关闭 */
+  private async ensureProductsPage() {
+    const main = ensurePage(this.mainPage)
+    if (Result.isFailure(main)) return main
+    if (!this.productsPage || this.productsPage.isClosed()) {
+      const page = await main.value.context().newPage()
+      this.productsPage = page
+      await page.goto(URLS.PRODUCTS_PAGE, { waitUntil: 'domcontentloaded' })
+      await dismissWechatChannelModalsUntilGone(page)
+    } else {
+      await dismissWechatChannelModals(this.productsPage)
+    }
+    if (!this.productsPage || this.productsPage.isClosed()) {
+      return Result.fail(
+        new UnexpectedError({
+          description: '视频号商品页已关闭，请重新连接中控台后再开自动弹窗',
+        }),
+      )
+    }
+    return Result.succeed(this.productsPage)
+  }
+
   async disconnect(): Promise<void> {
     throw new Error('Method not implemented.')
   }
 
   async performPopup(id: number, signal?: AbortSignal) {
+    const page = await this.ensureProductsPage()
+    if (Result.isFailure(page)) return page
     return Result.pipe(
-      ensurePage(this.productsPage),
-      Result.andThen(page => getItemFromVirtualScroller(page, elementFinder, id)),
+      Result.succeed(page.value),
+      Result.andThen(current => getItemFromVirtualScroller(current, elementFinder, id)),
       Result.andThen(item => elementFinder.getPopUpButtonFromGoodsItem(item)),
       Result.andThen(btn => toggleButton(btn, TEXT.POPUP_BUTTON, TEXT.POPUP_BUTTON_CANCLE, signal)),
     )
@@ -116,19 +157,37 @@ export class WechatChannelPlatform
     )
   }
 
-  startCommentListener(onComment: (comment: LiveMessage) => void) {
-    Result.pipe(
-      ensurePage(this.mainPage),
-      Result.inspect(page => {
-        this.commentListener = new WeChatChannelCommentListener(page)
-        this.commentListener.setHostAccountName(this.accountName)
-        this.commentListener.startCommentListener(onComment)
-      }),
-    )
+  startCommentListener(
+    onComment: (comment: LiveMessage) => void,
+    source?: CommentListenerConfig['source'],
+    onEnded?: (reason: string) => void,
+  ) {
+    const page = ensurePage(this.mainPage)
+    if (Result.isFailure(page)) {
+      throw page.error
+    }
+    this.commentListener = new WeChatChannelCommentListener(page.value)
+    this.commentListener.setHostAccountName(this.accountName)
+    this.commentListener.startCommentListener(onComment, source, onEnded)
   }
 
   stopCommentListener(): void {
     this.commentListener?.stopCommentListener()
+  }
+
+  startLiveEndedWatch(onEnded: (reason: string) => void) {
+    this.stopLiveEndedWatch()
+    const page = ensurePage(this.mainPage)
+    if (Result.isFailure(page)) {
+      throw page.error
+    }
+    this.liveEndedWatcher = new WeChatChannelLiveEndedWatcher(page.value)
+    this.liveEndedWatcher.start(onEnded)
+  }
+
+  stopLiveEndedWatch() {
+    this.liveEndedWatcher?.stop()
+    this.liveEndedWatcher = null
   }
 
   async pinComment(comment: string): Result.ResultAsync<void, PlatformError> {
@@ -176,10 +235,9 @@ export class WechatChannelPlatform
   }
 
   async listGoodsIds() {
-    return Result.pipe(
-      ensurePage(this.productsPage),
-      Result.andThen(page => getAllGoodsIdsFromScroller(page, elementFinder)),
-    )
+    const page = await this.ensureProductsPage()
+    if (Result.isFailure(page)) return page
+    return getAllGoodsIdsFromScroller(page.value, elementFinder)
   }
 
   getCommentPage() {

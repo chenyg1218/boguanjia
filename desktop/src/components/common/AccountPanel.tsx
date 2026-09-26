@@ -139,9 +139,7 @@ function AccountCard({
         ? 'busy'
         : replyCtx?.isListening === 'error'
           ? 'warn'
-          : replyCtx?.isRunning
-            ? 'ok'
-            : 'muted'
+          : 'muted'
 
   return (
     <div
@@ -314,7 +312,7 @@ export function AccountPanel() {
     if (max >= 0 && accounts.length >= max) {
       toast.error(
         max <= 1
-          ? '基础版只能用 1 个账号，请到「应用设置 → 收费计划」开通专业版或旗舰版'
+          ? '基础版只能用 1 个账号，请到左侧「会员权益」开通专业版或旗舰版'
           : `专业版最多 ${max} 个账号，升级旗舰版可无上限`,
       )
       return
@@ -383,7 +381,7 @@ export function AccountPanel() {
 
   const openCopyDialog = useMemoizedFn((account: Account) => {
     if (!status.isPro) {
-      toast.error('开通专业版或旗舰版后，可在多个账号间复制配置。请到「应用设置 → 收费计划」激活卡密')
+      toast.error('开通专业版或旗舰版后，可在多个账号间复制配置。请到左侧「会员权益」激活卡密')
       return
     }
     const targets = accounts.filter(a => !a.disabled && a.id !== account.id)

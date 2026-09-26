@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Jindou license API: POST /redeem, POST /validate; responses include server_time."""
+"""Jindou license API: POST /redeem, /validate, /bind-platform; responses include server_time."""
 
 import json
 import os
@@ -36,6 +36,21 @@ except ValueError:
     SESSION_GRACE_DAYS = 2
 _MACHINE_ID_RE = re.compile(r"^[a-fA-F0-9]{16,64}$")
 _TIME_FMT = "%Y-%m-%d %H:%M:%S"
+# 与桌面端 shared/platforms.ts 对齐（基础/专业版单平台锁定）
+_ALLOWED_PLATFORMS = frozenset(
+    {
+        "douyin",
+        "buyin",
+        "eos",
+        "xiaohongshu",
+        "pgy",
+        "wxchannel",
+        "kuaishou",
+        "taobao",
+    }
+)
+# 仅登记平台、尚无付费时长时的占位到期（视为已过期）
+_PLATFORM_STUB_EXPIRES = "1970-01-01T00:00:00Z"
 
 _rate_lock = threading.Lock()
 _rate_buckets = {}
@@ -49,6 +64,11 @@ def _normalize_plan(plan):
     if raw in ("flagship", "ultimate", "unlimited"):
         return "flagship"
     return "flagship"
+
+
+def _normalize_platform(platform):
+    p = (platform or "").strip().lower()
+    return p if p in _ALLOWED_PLATFORMS else ""
 
 
 def _plan_rank(plan):
@@ -179,12 +199,19 @@ def _migrate(conn):
         "expires_at TEXT NOT NULL,"
         "updated_at TEXT NOT NULL,"
         "revoked INTEGER NOT NULL DEFAULT 0,"
-        "plan TEXT NOT NULL DEFAULT 'flagship')"
+        "plan TEXT NOT NULL DEFAULT 'flagship',"
+        "bound_platform TEXT NOT NULL DEFAULT '')"
     )
     mcols = {row[1] for row in conn.execute("PRAGMA table_info(machines)").fetchall()}
     if mcols and "plan" not in mcols:
         conn.execute(
             "ALTER TABLE machines ADD COLUMN plan TEXT NOT NULL DEFAULT 'flagship'"
+        )
+    # 重新读列：新建表已含 plan 时仍需检查 bound_platform
+    mcols = {row[1] for row in conn.execute("PRAGMA table_info(machines)").fetchall()}
+    if mcols and "bound_platform" not in mcols:
+        conn.execute(
+            "ALTER TABLE machines ADD COLUMN bound_platform TEXT NOT NULL DEFAULT ''"
         )
 
 
@@ -233,9 +260,25 @@ def _payload_base(**extra):
 
 def _get_machine(conn, mid):
     return conn.execute(
-        "SELECT machine_id, expires_at, updated_at, revoked, plan FROM machines WHERE machine_id = ?",
+        "SELECT machine_id, expires_at, updated_at, revoked, plan, bound_platform "
+        "FROM machines WHERE machine_id = ?",
         (mid,),
     ).fetchone()
+
+
+def _row_bound_platform(row):
+    if row is None:
+        return ""
+    try:
+        return _normalize_platform(row["bound_platform"])
+    except (KeyError, IndexError, TypeError):
+        return ""
+
+
+def _with_bound_platform(data, bound):
+    if isinstance(data, dict):
+        data["bound_platform"] = bound or ""
+    return data
 
 
 def _active_plan(conn, mid):
@@ -367,16 +410,19 @@ def redeem(card, machine_id=""):
                         mplan = _normalize_plan(
                             m["plan"] if m is not None else card_plan
                         )
-                        return 200, _attach_token(
-                            _payload_base(
-                                ok=True,
-                                days=int(row2["days"] or 0),
-                                used_at=row2["used_at"] or "",
-                                expires_at=(m["expires_at"] if m else ""),
-                                replay=True,
+                        return 200, _with_bound_platform(
+                            _attach_token(
+                                _payload_base(
+                                    ok=True,
+                                    days=int(row2["days"] or 0),
+                                    used_at=row2["used_at"] or "",
+                                    expires_at=(m["expires_at"] if m else ""),
+                                    replay=True,
+                                ),
+                                mid,
+                                mplan,
                             ),
-                            mid,
-                            mplan,
+                            _row_bound_platform(m),
                         )
                     return 409, _payload_base(ok=False, error="卡密已使用")
 
@@ -384,44 +430,56 @@ def redeem(card, machine_id=""):
                     conn, mid, days, result_plan
                 )
                 conn.commit()
-                return 200, _attach_token(
-                    _payload_base(
-                        ok=True,
-                        days=days,
-                        used_at=used_at,
-                        expires_at=expires_at,
-                        replay=False,
-                        upgraded=bool(active and result_plan != active),
+                m = _get_machine(conn, mid)
+                return 200, _with_bound_platform(
+                    _attach_token(
+                        _payload_base(
+                            ok=True,
+                            days=days,
+                            used_at=used_at,
+                            expires_at=expires_at,
+                            replay=False,
+                            upgraded=bool(active and result_plan != active),
+                        ),
+                        mid,
+                        machine_plan,
                     ),
-                    mid,
-                    machine_plan,
+                    _row_bound_platform(m),
                 )
 
             bound = (row["redeemed_by"] or "").strip().lower()
             if bound and bound == mid:
                 m = _get_machine(conn, mid)
                 mplan = _normalize_plan(m["plan"] if m is not None else card_plan)
-                return 200, _attach_token(
-                    _payload_base(
-                        ok=True,
-                        days=days,
-                        used_at=row["used_at"] or "",
-                        expires_at=(m["expires_at"] if m else ""),
-                        replay=True,
+                return 200, _with_bound_platform(
+                    _attach_token(
+                        _payload_base(
+                            ok=True,
+                            days=days,
+                            used_at=row["used_at"] or "",
+                            expires_at=(m["expires_at"] if m else ""),
+                            replay=True,
+                        ),
+                        mid,
+                        mplan,
                     ),
-                    mid,
-                    mplan,
+                    _row_bound_platform(m),
                 )
             return 409, _payload_base(ok=False, error="卡密已使用")
         finally:
             conn.close()
 
 
-def validate(machine_id=""):
-    """启动心跳：返回服务端时间与该机登记到期/档位；可检测吊销。"""
+def validate(machine_id="", bound_platform=""):
+    """启动心跳：返回服务端时间与该机登记到期/档位/绑定平台；可检测吊销。
+
+    可选 bound_platform：若服务端尚未绑定且客户端已有合法平台，则治愈写入（防本地清后丢锁）。
+    """
     mid = _normalize_machine_id(machine_id)
     if not mid:
         return 400, _payload_base(ok=False, error="缺少本机标识")
+
+    client_plat = _normalize_platform(bound_platform)
 
     with _db_lock:
         conn = _connect()
@@ -429,13 +487,16 @@ def validate(machine_id=""):
             _migrate(conn)
             row = _get_machine(conn, mid)
             if row is None:
-                return 200, _payload_base(
-                    ok=True,
-                    known=False,
-                    revoked=False,
-                    expires_at="",
-                    plan="free",
-                    max_accounts=1,
+                return 200, _with_bound_platform(
+                    _payload_base(
+                        ok=True,
+                        known=False,
+                        revoked=False,
+                        expires_at="",
+                        plan="free",
+                        max_accounts=1,
+                    ),
+                    "",
                 )
             revoked = int(row["revoked"] or 0) != 0
             exp = row["expires_at"] or ""
@@ -446,6 +507,32 @@ def validate(machine_id=""):
                 plan = _normalize_plan(row["plan"])
             except (KeyError, IndexError):
                 plan = "flagship"
+            current_bound = _row_bound_platform(row)
+            # 服务端未绑定时，用客户端上报治愈；已绑定则不可被覆盖
+            if not revoked and not current_bound and client_plat:
+                conn.execute(
+                    "UPDATE machines SET bound_platform = ?, updated_at = ? "
+                    "WHERE machine_id = ? AND (bound_platform IS NULL OR bound_platform = '')",
+                    (client_plat, _now_iso(), mid),
+                )
+                conn.commit()
+                current_bound = client_plat
+
+            # 仅平台占位（尚未核销）：known=false，但仍带回 bound_platform 供客户端锁定
+            if not revoked and exp == _PLATFORM_STUB_EXPIRES:
+                return 200, _with_bound_platform(
+                    _payload_base(
+                        ok=True,
+                        known=False,
+                        revoked=False,
+                        expired=True,
+                        expires_at="",
+                        plan="free",
+                        max_accounts=1,
+                    ),
+                    current_bound,
+                )
+
             data = _payload_base(
                 ok=not revoked,
                 known=True,
@@ -457,6 +544,7 @@ def validate(machine_id=""):
                     _max_accounts(plan) if not expired and not revoked else 1
                 ),
             )
+            data = _with_bound_platform(data, current_bound)
             if not revoked and not expired:
                 data = _attach_token(data, mid, plan)
             return 200, data
@@ -464,8 +552,68 @@ def validate(machine_id=""):
             conn.close()
 
 
+def bind_platform(machine_id="", platform=""):
+    """首次绑定直播平台；已绑定则仅允许同平台重放，换绑返回 409。"""
+    mid = _normalize_machine_id(machine_id)
+    if not mid:
+        return 400, _payload_base(ok=False, error="缺少本机标识")
+
+    plat = _normalize_platform(platform)
+    if not plat:
+        return 400, _payload_base(ok=False, error="不支持的平台")
+
+    with _db_lock:
+        conn = _connect()
+        try:
+            _migrate(conn)
+            if _machine_revoked(conn, mid):
+                return 403, _with_bound_platform(
+                    _payload_base(ok=False, error="本机授权已被吊销，无法绑定平台"),
+                    "",
+                )
+
+            row = _get_machine(conn, mid)
+            current = _row_bound_platform(row)
+            if current and current != plat:
+                return 409, _with_bound_platform(
+                    _payload_base(
+                        ok=False,
+                        error="本机已绑定其他平台，无法换绑；跨平台请开通旗舰版",
+                    ),
+                    current,
+                )
+            if current == plat:
+                return 200, _with_bound_platform(
+                    _payload_base(ok=True, replay=True),
+                    current,
+                )
+
+            updated = _now_iso()
+            if row is None:
+                # 基础版尚未核销卡密：登记平台占位行，validate 仍视为 known + expired
+                conn.execute(
+                    "INSERT INTO machines "
+                    "(machine_id, expires_at, updated_at, revoked, plan, bound_platform) "
+                    "VALUES (?, ?, ?, 0, 'flagship', ?)",
+                    (mid, _PLATFORM_STUB_EXPIRES, updated, plat),
+                )
+            else:
+                conn.execute(
+                    "UPDATE machines SET bound_platform = ?, updated_at = ? "
+                    "WHERE machine_id = ?",
+                    (plat, updated, mid),
+                )
+            conn.commit()
+            return 200, _with_bound_platform(
+                _payload_base(ok=True, replay=False),
+                plat,
+            )
+        finally:
+            conn.close()
+
+
 class Handler(BaseHTTPRequestHandler):
-    server_version = "JindouLicense/1.3"
+    server_version = "JindouLicense/1.4"
 
     def log_message(self, fmt, *args):
         print("[%s] %s" % (self.log_date_time_string(), fmt % args))
@@ -516,7 +664,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path.rstrip("/") or "/"
-        if path not in ("/redeem", "/validate"):
+        if path not in ("/redeem", "/validate", "/bind-platform"):
             self._send_json(404, _payload_base(ok=False, error="Not Found"))
             return
 
@@ -547,8 +695,16 @@ class Handler(BaseHTTPRequestHandler):
                 str(payload.get("card") or ""),
                 str(payload.get("machine_id") or ""),
             )
+        elif path == "/bind-platform":
+            status, data = bind_platform(
+                str(payload.get("machine_id") or ""),
+                str(payload.get("platform") or ""),
+            )
         else:
-            status, data = validate(str(payload.get("machine_id") or ""))
+            status, data = validate(
+                str(payload.get("machine_id") or ""),
+                str(payload.get("bound_platform") or ""),
+            )
         self._send_json(status, data)
 
     def do_GET(self):

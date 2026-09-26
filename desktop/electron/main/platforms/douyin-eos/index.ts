@@ -10,19 +10,22 @@ import {
   getItemFromVirtualScroller,
   toggleButton,
 } from '../helper'
-import type { IPerformComment, IPerformPopup, IPlatform } from '../IPlatform'
+import type { ILiveEndedWatch, IPerformComment, IPerformPopup, IPlatform } from '../IPlatform'
 import { REGEXPS, SELECTORS, TEXTS, URLS } from './constant'
 import { douyinEosElementFinder as elementFinder } from './element-finder'
+import { DouyinEosLiveEndedWatcher } from './liveEndedWatcher'
 
 const PLATFORM_NAME = '抖音团购' as const
 
 /**
  * 抖音团购
  */
-export class DouyinEosPlatform implements IPlatform, IPerformPopup, IPerformComment {
+export class DouyinEosPlatform implements IPlatform, IPerformPopup, IPerformComment, ILiveEndedWatch {
   readonly _isPerformComment = true
   readonly _isPerformPopup = true
+  readonly _isLiveEndedWatch = true
   public mainPage: Page | null = null
+  private liveEndedWatcher: DouyinEosLiveEndedWatcher | null = null
 
   async connect(browserSession: BrowserSession) {
     const { page } = browserSession
@@ -86,6 +89,21 @@ export class DouyinEosPlatform implements IPlatform, IPerformPopup, IPerformComm
 
   getCommentPage() {
     return this.mainPage
+  }
+
+  startLiveEndedWatch(onEnded: (reason: string) => void) {
+    this.stopLiveEndedWatch()
+    const page = ensurePage(this.mainPage)
+    if (Result.isFailure(page)) {
+      throw page.error
+    }
+    this.liveEndedWatcher = new DouyinEosLiveEndedWatcher(page.value)
+    this.liveEndedWatcher.start(onEnded)
+  }
+
+  stopLiveEndedWatch() {
+    this.liveEndedWatcher?.stop()
+    this.liveEndedWatcher = null
   }
 
   get platformName() {

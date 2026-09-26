@@ -93,6 +93,10 @@ export const IPC_CHANNELS = {
     sync: 'license:sync',
     /** 渲染进程同步账号 ID 列表，供主进程按档位上限强制 */
     syncAccounts: 'license:syncAccounts',
+    /** 首次连接成功后确认绑定平台 */
+    confirmPlatformBind: 'license:confirmPlatformBind',
+    /** 老用户：有历史登录态时自动继承平台绑定 */
+    migrateLegacyPlatform: 'license:migrateLegacyPlatform',
     /** 主进程运行中复检后推送（到期 / 心跳） */
     changed: 'license:changed',
   },

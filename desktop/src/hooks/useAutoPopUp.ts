@@ -45,7 +45,7 @@ const defaultContext = (): AutoPopUpContext => ({
   isRunning: false,
   config: {
     scheduler: {
-      interval: [30000, 45000],
+      interval: [8000, 15000],
     },
     goodsIds: [],
     random: false,

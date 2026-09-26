@@ -1,7 +1,7 @@
 import type { Page } from 'playwright'
 import type { BrowserSession } from '#/managers/BrowserSessionManager'
 import { ensurePage, getAccountName, openUrlByElement } from '../helper'
-import type { ICommentListener, IPerformComment, IPerformPopup, IPlatform } from '../IPlatform'
+import type { ICommentListener, ILiveEndedWatch, IPerformComment, IPerformPopup, IPlatform } from '../IPlatform'
 import { XiaohongshuPlatform } from '../xiaohongshu'
 import { REGEXPS, SELECTORS, URLS } from './constant'
 
@@ -11,12 +11,13 @@ const PLATFORM_NAME = '蒲公英' as const
  * 蒲公英
  */
 export class XiaohongshuPgyPlatform
-  implements IPlatform, IPerformPopup, IPerformComment, ICommentListener
+  implements IPlatform, IPerformPopup, IPerformComment, ICommentListener, ILiveEndedWatch
 {
   readonly _isPerformComment = true
   readonly _isPerformPopup = true
   private mainPage: Page | null = null
   readonly _isCommentListener = true
+  readonly _isLiveEndedWatch = true
   private accountName = ''
 
   async connect(browserSession: BrowserSession) {
@@ -81,6 +82,14 @@ export class XiaohongshuPgyPlatform
     return XiaohongshuPlatform.prototype.performPopup.apply(this, args)
   }
 
+  getPopupCardVisibleMs() {
+    return XiaohongshuPlatform.prototype.getPopupCardVisibleMs.call(this)
+  }
+
+  async refreshPopupCard(...args: Parameters<NonNullable<IPerformPopup['refreshPopupCard']>>) {
+    return XiaohongshuPlatform.prototype.refreshPopupCard.apply(this, args)
+  }
+
   async listGoodsIds() {
     return XiaohongshuPlatform.prototype.listGoodsIds!.call(this)
   }
@@ -89,12 +98,29 @@ export class XiaohongshuPgyPlatform
     return XiaohongshuPlatform.prototype.performComment.call(this, message)
   }
 
-  async startCommentListener(onComment: (comment: LiveMessage) => void) {
-    return XiaohongshuPlatform.prototype.startCommentListener.call(this, onComment)
+  async startCommentListener(
+    onComment: (comment: LiveMessage) => void,
+    source?: CommentListenerConfig['source'],
+    onEnded?: (reason: string) => void,
+  ) {
+    return XiaohongshuPlatform.prototype.startCommentListener.call(
+      this,
+      onComment,
+      source,
+      onEnded,
+    )
   }
 
   async stopCommentListener(): Promise<void> {
     return XiaohongshuPlatform.prototype.stopCommentListener.call(this)
+  }
+
+  startLiveEndedWatch(onEnded: (reason: string) => void) {
+    return XiaohongshuPlatform.prototype.startLiveEndedWatch.call(this, onEnded)
+  }
+
+  stopLiveEndedWatch() {
+    return XiaohongshuPlatform.prototype.stopLiveEndedWatch.call(this)
   }
 
   getCommentListenerPage(): Page {

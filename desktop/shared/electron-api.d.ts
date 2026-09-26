@@ -11,15 +11,13 @@ export interface IpcChannels {
     storageState?: string
     platform: LiveControlPlatform
     account: Account
-  }) => TaskIpcResult
+  }) =>
+    | { ok: true; needsPlatformBindConfirm?: boolean }
+    | { ok: false; error: string }
   [IPC_CHANNELS.tasks.liveControl.disconnect]: (accountId: string) => TaskIpcResult
   [IPC_CHANNELS.tasks.liveControl.disconnectedEvent]: (payload: {
     accountId: string
     reason: import('./session').DisconnectReason
-  }) => void
-  [IPC_CHANNELS.tasks.liveControl.tasksResumedEvent]: (payload: {
-    accountId: string
-    tasks: import('./session').ResumableTaskType[]
   }) => void
   [IPC_CHANNELS.tasks.liveControl.notifyAccountName]: (
     params:
@@ -30,8 +28,10 @@ export interface IpcChannels {
         }
       | { ok: false },
   ) => void
-
-  // AutoMessage
+  [IPC_CHANNELS.tasks.liveControl.tasksResumedEvent]: (payload: {
+    accountId: string
+    tasks: import('./session').ResumableTaskType[]
+  }) => void
   [IPC_CHANNELS.tasks.autoMessage.start]: (
     accountId: string,
     config: AutoCommentConfig,
@@ -261,7 +261,7 @@ export interface IpcChannels {
 
   [IPC_CHANNELS.account.switch]: (params: { account: Account }) => void
 
-  // License / 收费计划
+  // License / 会员权益
   [IPC_CHANNELS.license.status]: () => {
     isPro: boolean
     plan: 'free' | 'pro' | 'flagship'
@@ -269,6 +269,10 @@ export interface IpcChannels {
     announcement: string
     machineId: string
     maxAccounts: number
+    boundPlatform: string
+    platformEverBound: boolean
+    platformLocked: boolean
+    needsPlatformBindConfirm: boolean
   }
   [IPC_CHANNELS.license.activate]: (card: string) => {
     ok: boolean
@@ -280,6 +284,10 @@ export interface IpcChannels {
       announcement: string
       machineId: string
       maxAccounts: number
+      boundPlatform: string
+      platformEverBound: boolean
+      platformLocked: boolean
+      needsPlatformBindConfirm: boolean
     }
   }
   [IPC_CHANNELS.license.sync]: () => {
@@ -290,10 +298,49 @@ export interface IpcChannels {
       announcement: string
       machineId: string
       maxAccounts: number
+      boundPlatform: string
+      platformEverBound: boolean
+      platformLocked: boolean
+      needsPlatformBindConfirm: boolean
     }
     warning?: string
   }
   [IPC_CHANNELS.license.syncAccounts]: (accountIds: string[]) => string[]
+  [IPC_CHANNELS.license.confirmPlatformBind]: (platform: LiveControlPlatform) => {
+    ok: boolean
+    message: string
+    status: {
+      isPro: boolean
+      plan: 'free' | 'pro' | 'flagship'
+      expiresAt: string
+      announcement: string
+      machineId: string
+      maxAccounts: number
+      boundPlatform: string
+      platformEverBound: boolean
+      platformLocked: boolean
+      needsPlatformBindConfirm: boolean
+    }
+  }
+  [IPC_CHANNELS.license.migrateLegacyPlatform]: (
+    accountId: string,
+    platform: LiveControlPlatform,
+  ) => {
+    ok: boolean
+    message: string
+    status: {
+      isPro: boolean
+      plan: 'free' | 'pro' | 'flagship'
+      expiresAt: string
+      announcement: string
+      machineId: string
+      maxAccounts: number
+      boundPlatform: string
+      platformEverBound: boolean
+      platformLocked: boolean
+      needsPlatformBindConfirm: boolean
+    }
+  }
   [IPC_CHANNELS.license.changed]: (payload: {
     status: {
       isPro: boolean
@@ -302,6 +349,10 @@ export interface IpcChannels {
       announcement: string
       machineId: string
       maxAccounts: number
+      boundPlatform: string
+      platformEverBound: boolean
+      platformLocked: boolean
+      needsPlatformBindConfirm: boolean
     }
     warning?: string
   }) => void

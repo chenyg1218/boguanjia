@@ -16,8 +16,11 @@ export const URLS = {
   INDEX_PAGE: 'https://channels.weixin.qq.com/platform',
   /** 商品页面 */
   PRODUCTS_PAGE: 'https://channels.weixin.qq.com/platform/live/commodity/onsale/index',
-  /** 评论监听API前缀 */
-  MSG_API_PREFIX: 'micro/live/cgi-bin/mmfinderassistant-bin/live/msg?',
+  /**
+   * 评论长轮询接口。
+   * 实际地址是 /cgi-bin/mmfinderassistant-bin/live/msg（不要带 micro/ 前缀，否则匹配不到）。
+   */
+  MSG_API_PREFIX: '/mmfinderassistant-bin/live/msg',
 } as const
 
 export const REGEXPS = {
@@ -41,7 +44,9 @@ export const SELECTORS = {
   /** 视频号中控台在 iframe 里，要先获取 iframe 才能定位其余元素 */
   LIVE_CONTROL_IFRAME: '.wujie_iframe',
   overlays: {
-    /** 关闭商品页面偶尔弹出的弹窗 “直播间讲解支持「送礼物」模式” 的按钮 */
+    /** 「直播间讲解支持「送礼物」模式」等 WeUI 弹窗 */
+    DIALOG: '.weui-desktop-dialog',
+    /** 右上角关闭；主按钮文案是「我知道了」，不靠这个 class */
     CLOSE_BUTTON: '.weui-desktop-dialog button[class*="close-btn"]',
   },
   goodsItem: {

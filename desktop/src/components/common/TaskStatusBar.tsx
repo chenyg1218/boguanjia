@@ -52,7 +52,7 @@ function StatusChip({
   return body
 }
 
-/** 当前账号：连接 / 监听 / 发言 / 弹窗 / 回复 状态一览 */
+/** 当前账号：连接 / 发言 / 弹窗 / 回复 状态一览。评论监听属于自动回复，不单独占一格。 */
 export function TaskStatusBar() {
   const connection = useCurrentLiveControl(c => c.isConnected)
 
@@ -69,38 +69,34 @@ export function TaskStatusBar() {
         ? { value: '连接中…', tone: 'busy' as Tone }
         : { value: '未连接', tone: 'muted' as Tone }
 
-  const listenChip =
-    isListening === 'listening'
-      ? { value: '监听中', tone: 'ok' as Tone }
+  const replyChip =
+    isListening === 'error'
+      ? { value: '监听异常', tone: 'warn' as Tone }
       : isListening === 'waiting'
-        ? { value: '等待中', tone: 'busy' as Tone }
-        : isListening === 'error'
-          ? { value: '监听异常', tone: 'warn' as Tone }
-          : { value: '未监听', tone: 'muted' as Tone }
+        ? { value: '启动中', tone: 'busy' as Tone }
+        : replyRunning
+          ? { value: '运行中', tone: 'ok' as Tone }
+          : { value: '未运行', tone: 'muted' as Tone }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-6 py-2">
-      <StatusChip label="中控台" {...connectionChip} to="/" />
-      <StatusChip
-        label="自动发言"
-        value={messageRunning ? '运行中' : '未运行'}
-        tone={messageRunning ? 'ok' : 'muted'}
-        to="/auto-message"
-      />
-      <StatusChip
-        label="自动弹窗"
-        value={popupRunning ? '运行中' : '未运行'}
-        tone={popupRunning ? 'ok' : 'muted'}
-        to="/auto-popup"
-      />
-      <StatusChip label="评论监听" {...listenChip} to="/auto-reply" />
-      <StatusChip
-        label="自动回复"
-        value={replyRunning ? '运行中' : '未运行'}
-        tone={replyRunning ? 'ok' : 'muted'}
-        to="/auto-reply"
-      />
-      {/* v1.2 暂缓：直播话术状态 */}
+    <div className="border-b bg-muted/30 px-8 py-2">
+      <div className="container flex flex-wrap items-center gap-2">
+        <StatusChip label="中控台" {...connectionChip} to="/" />
+        <StatusChip
+          label="自动发言"
+          value={messageRunning ? '运行中' : '未运行'}
+          tone={messageRunning ? 'ok' : 'muted'}
+          to="/auto-message"
+        />
+        <StatusChip
+          label="自动弹窗"
+          value={popupRunning ? '运行中' : '未运行'}
+          tone={popupRunning ? 'ok' : 'muted'}
+          to="/auto-popup"
+        />
+        <StatusChip label="自动回复" {...replyChip} to="/auto-reply" />
+        {/* v1.2 暂缓：直播话术状态 */}
+      </div>
     </div>
   )
 }

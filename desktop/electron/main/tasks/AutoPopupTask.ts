@@ -7,12 +7,14 @@ import {
   isPerformPopup,
   type IPerformPopup,
 } from '#/platforms/IPlatform'
-import { mergeWithoutArray, randomInt, takeScreenshot } from '#/utils'
+import { abortableSleep, mergeWithoutArray, randomInt, takeScreenshot } from '#/utils'
 import windowManager from '#/windowManager'
 import { createIntervalTask } from './IntervalTask'
 import { runWithRetry } from './retry'
 
 const TASK_NAME = '自动弹窗'
+/** 切品前的短暂间隔（讲解时长已在 execute 内等待完毕时使用） */
+const SWITCH_GAP_MS = 500
 
 const retryOptions = {
   maxRetries: 3,
@@ -36,6 +38,11 @@ function buildExecutionQueue(config: AutoPopupConfig): { id: number; interval: [
     }
   }
   return queue
+}
+
+function resolveHoldMs(interval: [number, number]) {
+  const [mn, mx] = [Math.min(...interval), Math.max(...interval)]
+  return randomInt(mn, mx)
 }
 
 export function createAutoPopupTask(
@@ -63,7 +70,15 @@ export function createAutoPopupTask(
 
   async function execute(signal: AbortSignal) {
     const next = getNext()
-    intervalTask.updateInterval(next.interval)
+    const holdMs = resolveHoldMs(next.interval)
+    const cardVisibleMs = platform.getPopupCardVisibleMs?.() ?? null
+    const needsCardRefresh =
+      typeof cardVisibleMs === 'number' &&
+      cardVisibleMs > 0 &&
+      typeof platform.refreshPopupCard === 'function'
+
+    // 需要续弹卡时：讲解时长在本函数内等待，间隔任务只留切品空隙
+    intervalTask.updateInterval(needsCardRefresh ? SWITCH_GAP_MS : next.interval)
 
     const result = await runWithRetry(
       async () => {
@@ -86,7 +101,58 @@ export function createAutoPopupTask(
         },
       },
     )
-    return result
+
+    if (Result.isFailure(result)) {
+      return result
+    }
+
+    if (!needsCardRefresh || cardVisibleMs == null) {
+      return result
+    }
+
+    // 讲解时长内按平台弹卡可见时长续点，让观众侧展示覆盖整段讲解
+    const refreshEveryMs = cardVisibleMs
+    let elapsed = 0
+    while (elapsed + refreshEveryMs < holdMs) {
+      const sleepResult = await abortableSleep(refreshEveryMs, signal)
+      if (Result.isFailure(sleepResult)) return sleepResult
+      elapsed += refreshEveryMs
+
+      const refreshResult = await runWithRetry(
+        async () => {
+          if (signal.aborted) {
+            return Result.fail(new AbortError())
+          }
+          const refreshed = await platform.refreshPopupCard!(next.id, signal)
+          if (Result.isSuccess(refreshed)) {
+            logger.info(
+              `商品 ${next.id} 续弹商品卡（已讲 ${Math.round(elapsed / 1000)}s / ${Math.round(holdMs / 1000)}s）`,
+            )
+          }
+          return refreshed
+        },
+        {
+          ...retryOptions,
+          logger,
+          signal,
+          onRetryError: () => {
+            const page = platform.getPopupPage()
+            if (page) takeScreenshot(page, TASK_NAME, account.name)
+          },
+        },
+      )
+      if (Result.isFailure(refreshResult)) {
+        return refreshResult
+      }
+    }
+
+    const remaining = holdMs - elapsed
+    if (remaining > 0) {
+      const sleepResult = await abortableSleep(remaining, signal)
+      if (Result.isFailure(sleepResult)) return sleepResult
+    }
+
+    return Result.succeed()
   }
 
   function getNext(): { id: number; interval: [number, number] } {

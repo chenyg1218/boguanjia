@@ -11,22 +11,25 @@ import {
   getAllGoodsIdsFromScroller,
   getItemFromVirtualScroller,
 } from '../helper'
-import type { ICommentListener, IPerformComment, IPerformPopup, IPlatform } from '../IPlatform'
+import type { ICommentListener, ILiveEndedWatch, IPerformComment, IPerformPopup, IPlatform } from '../IPlatform'
 import { KuaishouCommentListener } from './commentListener'
 import { REGEXPS, SELECTORS, URLS } from './constant'
 import { kuaishouElementFinder as elementFinder } from './element-finder'
-import { dismissKuaishouModals, dismissKuaishouModalsUntilGone } from './overlays'
+import { KuaishouLiveEndedWatcher } from './liveEndedWatcher'
+import { dismissKuaishouModalsUntilGone } from './overlays'
 
 const PLATFORM_NAME = '快手小店' as const
 
 export class KuaishouPlatform
-  implements IPlatform, IPerformPopup, IPerformComment, ICommentListener
+  implements IPlatform, IPerformPopup, IPerformComment, ICommentListener, ILiveEndedWatch
 {
   readonly _isPerformPopup = true
   readonly _isPerformComment = true
   readonly _isCommentListener = true
+  readonly _isLiveEndedWatch = true
   private mainPage: Page | null = null
   private commentListener: KuaishouCommentListener | null = null
+  private liveEndedWatcher: KuaishouLiveEndedWatcher | null = null
 
   async connect(browserSession: BrowserSession): Promise<boolean> {
     const { page } = browserSession
@@ -140,7 +143,11 @@ export class KuaishouPlatform
     return Result.succeed()
   }
 
-  startCommentListener(onComment: (comment: LiveMessage) => void): void | Promise<void> {
+  startCommentListener(
+    onComment: (comment: LiveMessage) => void,
+    source?: CommentListenerConfig['source'],
+    onEnded?: (reason: string) => void,
+  ): void | Promise<void> {
     const page = ensurePage(this.mainPage)
     if (Result.isFailure(page)) {
       throw page.error
@@ -148,12 +155,28 @@ export class KuaishouPlatform
     if (!this.commentListener) {
       this.commentListener = new KuaishouCommentListener(page.value)
     }
-    this.commentListener.startCommentListener(onComment)
+    this.commentListener.startCommentListener(onComment, source, onEnded)
   }
 
   stopCommentListener(): void {
     this.commentListener?.stopCommentListener()
   }
+
+  startLiveEndedWatch(onEnded: (reason: string) => void) {
+    this.stopLiveEndedWatch()
+    const page = ensurePage(this.mainPage)
+    if (Result.isFailure(page)) {
+      throw page.error
+    }
+    this.liveEndedWatcher = new KuaishouLiveEndedWatcher(page.value)
+    this.liveEndedWatcher.start(onEnded)
+  }
+
+  stopLiveEndedWatch() {
+    this.liveEndedWatcher?.stop()
+    this.liveEndedWatcher = null
+  }
+
   getCommentListenerPage(): Page {
     if (!this.commentListener) {
       throw new Error('评论监听未启动。请先点击「开始监听」')

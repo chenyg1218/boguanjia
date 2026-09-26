@@ -59,7 +59,7 @@ def main():
         "--plan",
         choices=("pro", "flagship"),
         default="flagship",
-        help="default plan for txt / SQL rows without plan (pro=3账号, flagship=无上限)",
+        help="default plan for txt / SQL rows without plan (pro=单平台·3个账号, flagship=无上限)",
     )
     args = p.parse_args()
 

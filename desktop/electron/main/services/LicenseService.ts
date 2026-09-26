@@ -1,6 +1,6 @@
 /**
  * 播管家卡密授权（与 Python boguanjia.auth 协议对齐）。
- * 基础版：1 账号；专业版：3 账号；旗舰版：无上限。
+ * 基础版：单平台 · 1个账号；专业版：单平台 · 3个账号；旗舰版：平台与账号均不限。
  */
 import { createHash, createHmac, createPublicKey, verify as cryptoVerify } from 'node:crypto'
 import { execSync } from 'node:child_process'
@@ -15,6 +15,11 @@ import {
   normalizeLicensePlan,
   type LicensePlan,
 } from 'shared/licensePlan'
+import {
+  isLiveControlPlatform,
+  planLocksPlatform,
+  platformDisplayName,
+} from 'shared/platforms'
 import { createLogger } from '#/logger'
 import { accountManager } from '#/managers/AccountManager'
 import windowManager from '#/windowManager'
@@ -45,13 +50,15 @@ const CLOCK_ROLLBACK_SEC = 3600
 const WALL_FREEZE_MONO_MS = 5 * 60 * 1000
 const FREE_DEFAULT_ACCOUNT_ID = 'default'
 const EXPIRED_RUNTIME_HINT =
-  '专业版/旗舰版已到期，已切换为基础版（仅 1 个账号）。请到「设置 → 收费计划」续充卡密'
+  '专业版/旗舰版已到期，已切换为基础版（仅 1 个账号）。请到「会员权益」续充卡密'
 const LICENSE_ACCOUNT_DENIED =
   '该账号已超出当前档位可用数量，请升级旗舰版或切换到已授权账号'
+const PLATFORM_MISMATCH_HINT = (bound: string, want: string) =>
+  `当前档位已绑定「${platformDisplayName(bound)}」，无法切换到「${platformDisplayName(want)}」。跨平台请开通旗舰版`
 const CLOCK_ANOMALY_HINT =
-  '检测到系统时间异常，授权已暂停。请恢复正确时间并联网后，到设置页点击刷新'
+  '检测到系统时间异常，授权已暂停。请恢复正确时间并联网后，到「会员权益」点击刷新'
 const OFFLINE_MONOTONIC_HINT =
-  '已超过离线使用期限，请联网后重新校验授权（设置页点击刷新）'
+  '已超过离线使用期限，请联网后重新校验授权（「会员权益」点击刷新）'
 
 export interface LicenseState {
   expires_at: string
@@ -65,6 +72,12 @@ export interface LicenseState {
   last_validate_at: string
   /** 本地缓存的档位；正式授权以凭证载荷 p 为准 */
   plan: LicensePlan
+  /** 基础版/专业版绑定的平台；空字符串表示尚未绑定 */
+  bound_platform: string
+  /** 本机是否曾确认过平台绑定（用于旗舰降级后是否允许重新绑定） */
+  platform_ever_bound: boolean
+  /** 是否由用户在连接成功后的确认框中主动确认（排除静默迁移） */
+  platform_user_confirmed: boolean
 }
 
 export interface LicenseStatus {
@@ -75,6 +88,14 @@ export interface LicenseStatus {
   machineId: string
   /** -1 表示无上限 */
   maxAccounts: number
+  /** 已绑定平台 key；未绑定为空 */
+  boundPlatform: string
+  /** 是否曾绑定过平台 */
+  platformEverBound: boolean
+  /** 当前档位是否要求单平台绑定 */
+  platformLocked: boolean
+  /** 连接成功后是否需要弹出确认绑定 */
+  needsPlatformBindConfirm: boolean
 }
 
 interface LicenseConfig {
@@ -96,6 +117,9 @@ function emptyState(): LicenseState {
     clock_local_at: '',
     last_validate_at: '',
     plan: 'free',
+    bound_platform: '',
+    platform_ever_bound: false,
+    platform_user_confirmed: false,
   }
 }
 
@@ -103,7 +127,7 @@ function parseDemoPlan(label: string): LicensePlan {
   const raw = (label || '').trim().toLowerCase()
   if (raw.includes('flagship') || raw.includes('旗舰')) return 'flagship'
   if (raw.includes('pro') || raw.includes('专业')) return 'pro'
-  // 演示默认专业版，便于本地验证 3 账号上限
+  // 演示默认专业版，便于本地验证 3个账号上限
   return 'pro'
 }
 
@@ -170,7 +194,7 @@ export class LicenseService {
     return {
       redeem_url: BUILTIN_REDEEM_URL,
       announcement:
-        '购买卡密后在此激活；没到期再充，剩余天数会自动加上。专业版 29元/月·3账号，旗舰版 39元/月·无上限。\n卡密购买：https://www.zaofaka.com/links/1CD589E2',
+        '已有卡密可在此激活；没到期再充，剩余天数会自动加上。基础版 单平台 · 1个账号，专业版 单平台 · 3个账号，旗舰版账号与平台均不限。',
       timeout_seconds: 15,
       offline_grace_days: 2,
     }
@@ -222,6 +246,31 @@ export class LicenseService {
     }
     if (!this.state.machine_id) {
       this.state.machine_id = this.machineFingerprint()
+    }
+    if (typeof this.state.bound_platform !== 'string') {
+      this.state.bound_platform = ''
+    }
+    if (typeof this.state.platform_ever_bound !== 'boolean') {
+      this.state.platform_ever_bound = Boolean(this.state.bound_platform)
+    }
+    if (typeof this.state.platform_user_confirmed !== 'boolean') {
+      this.state.platform_user_confirmed = false
+    }
+    if (this.state.bound_platform && !isLiveControlPlatform(this.state.bound_platform)) {
+      this.state.bound_platform = ''
+    }
+    // 仅承认用户主动确认的绑定；清掉启动时静默迁移写入的绑定
+    if (!this.state.platform_user_confirmed && (this.state.bound_platform || this.state.platform_ever_bound)) {
+      this.state = {
+        ...this.state,
+        bound_platform: '',
+        platform_ever_bound: false,
+      }
+      try {
+        fs.writeFileSync(this.statePath(), JSON.stringify(this.state, null, 2), 'utf8')
+      } catch {
+        /* ignore */
+      }
     }
     return this.state
   }
@@ -433,6 +482,178 @@ export class LicenseService {
     return LICENSE_ACCOUNT_DENIED
   }
 
+  /** 当前档位是否限制单平台（基础/专业） */
+  private locksPlatform(state: LicenseState = this.state): boolean {
+    return planLocksPlatform(this.resolvePlan(state))
+  }
+
+  boundPlatform(): string {
+    const p = (this.state.bound_platform || '').trim()
+    return isLiveControlPlatform(p) ? p : ''
+  }
+
+  needsPlatformBindConfirm(state: LicenseState = this.state): boolean {
+    return this.locksPlatform(state) && !this.boundPlatform()
+  }
+
+  /**
+   * 连接前平台校验：已绑定且目标平台不一致则拒绝。
+   * 未绑定允许先连，连接成功后再确认绑定。
+   */
+  platformConnectError(platform: string): string | null {
+    if (!this.locksPlatform()) return null
+    const bound = this.boundPlatform()
+    if (!bound) return null
+    if (!isLiveControlPlatform(platform)) {
+      return '不支持的平台'
+    }
+    if (platform !== bound) {
+      return PLATFORM_MISMATCH_HINT(bound, platform)
+    }
+    return null
+  }
+
+  /**
+   * 首次连接成功后确认绑定。仅基础/专业且尚未绑定时生效。
+   * 有核销地址时必须先上报服务端成功；本地被清后仍以服务端 bound_platform 为准。
+   */
+  async confirmBindPlatform(
+    platform: string,
+  ): Promise<{ ok: boolean; message: string; status: LicenseStatus }> {
+    this.load()
+    if (!this.locksPlatform()) {
+      return {
+        ok: false,
+        message: '当前档位不限平台，无需绑定',
+        status: this.statusFromState(),
+      }
+    }
+    if (!isLiveControlPlatform(platform)) {
+      return { ok: false, message: '不支持的平台', status: this.statusFromState() }
+    }
+    const bound = this.boundPlatform()
+    if (bound) {
+      if (bound === platform) {
+        // 同平台重放：尽量补报服务端（本地已绑但服务端可能为空）
+        await this.reportBoundPlatform(platform)
+        return {
+          ok: true,
+          message: `已绑定「${platformDisplayName(platform)}」`,
+          status: this.statusFromState(),
+        }
+      }
+      return {
+        ok: false,
+        message: PLATFORM_MISMATCH_HINT(bound, platform),
+        status: this.statusFromState(),
+      }
+    }
+
+    const reported = await this.reportBoundPlatform(platform)
+    if (!reported.ok) {
+      return {
+        ok: false,
+        message: reported.message,
+        status: this.statusFromState(),
+      }
+    }
+    const finalPlatform = reported.bound || platform
+    this.save({
+      ...this.state,
+      bound_platform: finalPlatform,
+      platform_ever_bound: true,
+      platform_user_confirmed: true,
+    })
+    const status = this.statusFromState()
+    this.publishStatus(status, undefined, true)
+    return {
+      ok: true,
+      message: `已绑定「${platformDisplayName(finalPlatform)}」，当前档位仅可使用该平台`,
+      status,
+    }
+  }
+
+  /**
+   * @deprecated 已取消静默自动绑定；保留 IPC 兼容，始终拒绝。
+   */
+  migrateLegacyPlatform(
+    _accountId: string,
+    _platform: string,
+  ): { ok: boolean; message: string; status: LicenseStatus } {
+    this.load()
+    return {
+      ok: false,
+      message: '已取消自动继承绑定，请连接成功后在确认框中手动绑定',
+      status: this.statusFromState(),
+    }
+  }
+
+  private normalizeBoundPlatform(value: unknown): string {
+    const p = String(value || '').trim()
+    return isLiveControlPlatform(p) ? p : ''
+  }
+
+  /** 服务端绑定为准：有值则写回本地并标记为已确认 */
+  private applyServerBound(state: LicenseState, serverBound: string): LicenseState {
+    const bound = this.normalizeBoundPlatform(serverBound)
+    if (!bound) return state
+    return {
+      ...state,
+      bound_platform: bound,
+      platform_ever_bound: true,
+      platform_user_confirmed: true,
+    }
+  }
+
+  /**
+   * 向服务端登记平台绑定。无核销地址时仅本地（演示）；有地址则必须成功。
+   * 若服务端已绑定其他平台，写回本地并返回失败。
+   */
+  private async reportBoundPlatform(
+    platform: string,
+  ): Promise<{ ok: boolean; message: string; bound: string }> {
+    const bindUrl = this.bindPlatformUrl()
+    if (!bindUrl) {
+      return { ok: true, message: '', bound: platform }
+    }
+    const mid = this.machineFingerprint()
+    try {
+      const { data } = await this.postJson(bindUrl, {
+        machine_id: mid,
+        platform,
+      })
+      const serverBound = this.normalizeBoundPlatform(data.bound_platform)
+      if (serverBound && serverBound !== platform) {
+        this.save(this.applyServerBound(this.state, serverBound))
+        this.publishStatus(this.statusFromState(), undefined, true)
+        return {
+          ok: false,
+          message: PLATFORM_MISMATCH_HINT(serverBound, platform),
+          bound: serverBound,
+        }
+      }
+      if (!data.ok) {
+        if (serverBound) {
+          this.save(this.applyServerBound(this.state, serverBound))
+          this.publishStatus(this.statusFromState(), undefined, true)
+        }
+        return {
+          ok: false,
+          message: String(data.error || data.message || '平台绑定上报失败'),
+          bound: serverBound,
+        }
+      }
+      return { ok: true, message: '', bound: serverBound || platform }
+    } catch (err) {
+      logger.warn('平台绑定上报失败', err)
+      return {
+        ok: false,
+        message: '无法连接授权服务器，绑定需联网上报后生效',
+        bound: '',
+      }
+    }
+  }
+
   status(): LicenseStatus {
     this.load()
     return this.statusFromState()
@@ -441,6 +662,8 @@ export class LicenseService {
   private statusFromState(): LicenseStatus {
     const pro = this.paidOk(this.state)
     const plan = this.resolvePlan(this.state)
+    const bound = this.boundPlatform()
+    const locked = planLocksPlatform(plan)
     return {
       isPro: pro,
       plan,
@@ -448,11 +671,15 @@ export class LicenseService {
       announcement: this.config().announcement,
       machineId: this.machineFingerprint(),
       maxAccounts: maxAccountsForPlan(plan),
+      boundPlatform: bound,
+      platformEverBound: Boolean(this.state.platform_ever_bound || bound),
+      platformLocked: locked,
+      needsPlatformBindConfirm: locked && !bound,
     }
   }
 
   private statusKey(status: LicenseStatus) {
-    return `${status.isPro ? 1 : 0}|${status.plan}|${status.maxAccounts}|${status.expiresAt}`
+    return `${status.isPro ? 1 : 0}|${status.plan}|${status.maxAccounts}|${status.expiresAt}|${status.boundPlatform}`
   }
 
   /** 超出档位上限时关闭多余会话（不信任前端） */
@@ -701,6 +928,12 @@ export class LicenseService {
     return redeem.replace(/\/redeem\/?$/, '/validate')
   }
 
+  private bindPlatformUrl(): string {
+    const redeem = this.resolveRedeemUrl()
+    if (!redeem) return ''
+    return redeem.replace(/\/redeem\/?$/, '/bind-platform')
+  }
+
   private requestSignature(apiPath: string, machineId: string, ts: string, body: Buffer) {
     const bodyHash = createHash('sha256').update(body).digest('hex')
     const msg = `v1|${apiPath}|${machineId}|${ts}|${bodyHash}`
@@ -716,6 +949,7 @@ export class LicenseService {
     const pathname = u.pathname.replace(/\/$/, '') || '/'
     if (pathname.endsWith('/redeem')) return '/redeem'
     if (pathname.endsWith('/validate')) return '/validate'
+    if (pathname.endsWith('/bind-platform')) return '/bind-platform'
     return pathname
   }
 
@@ -816,6 +1050,7 @@ export class LicenseService {
     let tip = ''
     let redeemedPlan: LicensePlan = 'pro'
     let upgraded = false
+    let redeemBoundPlatform = ''
 
     if (!redeemUrl) {
       const m = DEMO_CARD_RE.exec(normalized)
@@ -866,6 +1101,7 @@ export class LicenseService {
       licenseToken = String(data.license_token || '').trim()
       redeemedPlan = normalizeLicensePlan(data.plan, 'flagship')
       upgraded = Boolean(data.upgraded)
+      redeemBoundPlatform = this.normalizeBoundPlatform(data.bound_platform)
       tip = data.replay
         ? `补领成功，增加 ${days} 天`
         : upgraded
@@ -897,7 +1133,7 @@ export class LicenseService {
     const applied = [...this.state.applied_cards]
     if (!applied.includes(fp)) applied.push(fp)
     const localNow = fmtLocal()
-    this.save({
+    let nextState: LicenseState = {
       ...this.state,
       expires_at: newExpires,
       token: newToken,
@@ -909,7 +1145,9 @@ export class LicenseService {
       clock_local_at: serverTime ? localNow : this.state.clock_local_at,
       last_validate_at: serverTime ? localNow : this.state.last_validate_at,
       plan: nextPlan,
-    })
+    }
+    nextState = this.applyServerBound(nextState, redeemBoundPlatform)
+    this.save(nextState)
 
     const status = this.statusFromState()
     if (serverTime) this.noteSuccessfulSync()
@@ -936,19 +1174,29 @@ export class LicenseService {
     }
     try {
       const mid = this.machineFingerprint()
-      const { data } = await this.postJson(url, { machine_id: mid })
+      const localBound = this.boundPlatform()
+      const { data } = await this.postJson(url, {
+        machine_id: mid,
+        ...(localBound ? { bound_platform: localBound } : {}),
+      })
       const serverTime = String(data.server_time || '')
       const localNow = fmtLocal()
+      const serverBound = this.normalizeBoundPlatform(data.bound_platform)
 
       if (data.revoked) {
-        this.save({
-          ...this.state,
-          expires_at: '',
-          token: '',
-          plan: 'free',
-          clock_server_at: serverTime || this.state.clock_server_at,
-          clock_local_at: serverTime ? localNow : this.state.clock_local_at,
-        })
+        this.save(
+          this.applyServerBound(
+            {
+              ...this.state,
+              expires_at: '',
+              token: '',
+              plan: 'free',
+              clock_server_at: serverTime || this.state.clock_server_at,
+              clock_local_at: serverTime ? localNow : this.state.clock_local_at,
+            },
+            serverBound,
+          ),
+        )
         if (serverTime) this.noteSuccessfulSync()
         const status = this.statusFromState()
         const warning = '授权已被吊销，请联系发卡方'
@@ -958,21 +1206,50 @@ export class LicenseService {
       }
 
       if (data.known === false && this.state.expires_at && this.state.token) {
-        this.save({
-          ...this.state,
-          expires_at: '',
-          token: '',
-          plan: 'free',
-          applied_cards: [],
-          clock_server_at: serverTime || this.state.clock_server_at,
-          clock_local_at: serverTime ? localNow : this.state.clock_local_at,
-        })
+        this.save(
+          this.applyServerBound(
+            {
+              ...this.state,
+              expires_at: '',
+              token: '',
+              plan: 'free',
+              applied_cards: [],
+              clock_server_at: serverTime || this.state.clock_server_at,
+              clock_local_at: serverTime ? localNow : this.state.clock_local_at,
+            },
+            serverBound,
+          ),
+        )
         if (serverTime) this.noteSuccessfulSync()
+        // 本地已有平台绑定时补报到服务端（机器行可能尚未建立）
+        if (localBound && !serverBound) {
+          await this.reportBoundPlatform(localBound)
+        }
         const status = this.statusFromState()
         const warning = '服务端无此机器授权记录，请重新激活卡密'
         this.publishStatus(status, warning, true)
         this.armLocalTimers()
         return { status, warning }
+      }
+
+      // 仅平台占位（known=false 且无本地付费票）：写回绑定后结束
+      if (data.known === false) {
+        let nextStub = { ...this.state }
+        if (serverTime) {
+          nextStub.clock_server_at = serverTime
+          nextStub.clock_local_at = localNow
+          nextStub.last_validate_at = localNow
+        }
+        nextStub = this.applyServerBound(nextStub, serverBound)
+        this.save(nextStub)
+        if (serverTime) this.noteSuccessfulSync()
+        if (this.locksPlatform() && this.boundPlatform() && !serverBound) {
+          await this.reportBoundPlatform(this.boundPlatform())
+        }
+        const status = this.statusFromState()
+        this.publishStatus(status)
+        this.armLocalTimers()
+        return { status }
       }
 
       let next = { ...this.state }
@@ -1004,14 +1281,22 @@ export class LicenseService {
             } else {
               logger.warn('授权同步：服务端 license_token 验签失败，强制降级')
             }
-            this.save({
-              ...next,
-              expires_at: localExp,
-              token: '',
-              plan: 'free',
-              machine_id: mid,
-            })
+            this.save(
+              this.applyServerBound(
+                {
+                  ...next,
+                  expires_at: localExp,
+                  token: '',
+                  plan: 'free',
+                  machine_id: mid,
+                },
+                serverBound,
+              ),
+            )
             if (serverTime) this.noteSuccessfulSync()
+            if (localBound && !serverBound) {
+              await this.reportBoundPlatform(localBound)
+            }
             const status = this.statusFromState()
             const warning = data.expired
               ? '授权已过期，基础版仅支持 1 个账号；请到设置页续充卡密'
@@ -1029,8 +1314,13 @@ export class LicenseService {
           }
         }
       }
+      // 服务端锁定优先；本地有绑、服务端尚无时补报
+      next = this.applyServerBound(next, serverBound)
       this.save(next)
       if (serverTime) this.noteSuccessfulSync()
+      if (this.locksPlatform() && this.boundPlatform() && !serverBound) {
+        await this.reportBoundPlatform(this.boundPlatform())
+      }
       const status = this.statusFromState()
       if (!status.isPro) {
         // 从未激活过卡密的纯免费用户无需提示「已过期」

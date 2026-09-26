@@ -1,5 +1,6 @@
 import { useMemoizedFn } from 'ahooks'
 import React, { useId } from 'react'
+import { WizardHighlight } from '@/components/onboarding/WizardTarget'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -27,18 +28,20 @@ const PopUpSettingsCard = React.memo(() => {
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <Label>弹窗设置</Label>
-              <p className="text-sm text-muted-foreground">控制弹多快、按什么顺序弹</p>
+              <p className="text-sm text-muted-foreground">控制每品讲多久、按什么顺序弹</p>
             </div>
-            <div className="flex items-center space-x-2">
-              <Switch id={randomPopUpId} checked={random} onCheckedChange={setRandom} />
-              <Label htmlFor={randomPopUpId} className="cursor-pointer">
-                随机弹窗
-              </Label>
-            </div>
+            <WizardHighlight targetId="auto-popup-random">
+              <div className="flex items-center space-x-2">
+                <Switch id={randomPopUpId} checked={random} onCheckedChange={setRandom} />
+                <Label htmlFor={randomPopUpId} className="cursor-pointer">
+                  随机弹窗
+                </Label>
+              </div>
+            </WizardHighlight>
           </div>
 
           <div className="space-y-1">
-            <Label>全局弹窗间隔（秒）</Label>
+            <Label>每品讲解时长</Label>
             <div className="flex items-center space-x-2">
               <Input
                 type="number"
@@ -60,7 +63,7 @@ const PopUpSettingsCard = React.memo(() => {
               <span className="text-sm text-muted-foreground">秒</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              每隔这么多秒弹一次。填一个范围，每次间隔会略有不同。
+              这段时间内会持续讲解当前商品，时间到了再切下一品。填一个范围，每次时长会略有不同。
             </p>
           </div>
         </div>

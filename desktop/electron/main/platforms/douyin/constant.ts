@@ -42,9 +42,11 @@ export const SELECTORS = {
     /** 长时间不操作弹窗的关闭按钮 */
     AFK_CLOSE_BUTTON:
       'div.auxo-modal-content > div > div > div.auxo-modal-confirm-btns > button.auxo-btn.auxo-btn-primary',
-    /** 直播结束后弹出的【直播总结】的关闭按钮 */
-    LIVE_OVER_CLOSE_BUTTON: 'div.auxo-modal-content svg[class^="liveOverCloseIcon"]',
   },
+  /** 直播结束后弹出的【直播总结】关闭按钮（用于停播检测，勿当普通遮罩关掉） */
+  LIVE_OVER_CLOSE_BUTTON: 'div.auxo-modal-content svg[class^="liveOverCloseIcon"]',
+  /** 未直播时【直播互动】区域 */
+  NO_LIVE: 'div[class^="noLiveData"]',
   /** 有新的评论时会弹出的按钮，点击后刷新新评论 */
   NEW_COMMENT_LABEL: '[class^="newCommentLabel"]',
   /** 电商罗盘已登录状态 */

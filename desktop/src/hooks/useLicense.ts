@@ -14,6 +14,10 @@ export interface LicenseStatus {
   machineId: string
   /** -1 表示无上限 */
   maxAccounts: number
+  boundPlatform: string
+  platformEverBound: boolean
+  platformLocked: boolean
+  needsPlatformBindConfirm: boolean
 }
 
 interface LicenseStore {
@@ -22,6 +26,13 @@ interface LicenseStore {
   ready: boolean
   refresh: () => Promise<void>
   activate: (card: string) => Promise<{ ok: boolean; message: string }>
+  confirmPlatformBind: (
+    platform: LiveControlPlatform,
+  ) => Promise<{ ok: boolean; message: string }>
+  migrateLegacyPlatform: (
+    accountId: string,
+    platform: LiveControlPlatform,
+  ) => Promise<{ ok: boolean; message: string }>
   applyRemote: (payload: { status: LicenseStatus; warning?: string }) => void
 }
 
@@ -30,9 +41,13 @@ const defaultStatus: LicenseStatus = {
   plan: 'free',
   expiresAt: '',
   announcement:
-    '购买卡密后在此激活；没到期再充，剩余天数会自动加上。\n卡密购买：https://www.zaofaka.com/links/1CD589E2',
+    '已有卡密可在此激活；没到期再充，剩余天数会自动加上。基础版 单平台 · 1个账号，专业版 单平台 · 3个账号，旗舰版账号与平台均不限。',
   machineId: '',
   maxAccounts: 1,
+  boundPlatform: '',
+  platformEverBound: false,
+  platformLocked: true,
+  needsPlatformBindConfirm: true,
 }
 
 export const useLicense = create<LicenseStore>(set => ({
@@ -79,6 +94,36 @@ export const useLicense = create<LicenseStore>(set => ({
             ? err.message
             : '激活失败'
       return { ok: false, message }
+    }
+  },
+
+  confirmPlatformBind: async platform => {
+    try {
+      const result = await window.ipcRenderer.invoke(
+        IPC_CHANNELS.license.confirmPlatformBind,
+        platform,
+      )
+      set({ status: result.status })
+      return { ok: result.ok, message: result.message }
+    } catch (err) {
+      return {
+        ok: false,
+        message: err instanceof Error ? err.message : '绑定平台失败',
+      }
+    }
+  },
+
+  migrateLegacyPlatform: async (accountId, platform) => {
+    try {
+      const result = await window.ipcRenderer.invoke(
+        IPC_CHANNELS.license.migrateLegacyPlatform,
+        accountId,
+        platform,
+      )
+      set({ status: result.status })
+      return { ok: result.ok, message: result.message }
+    } catch {
+      return { ok: false, message: '迁移失败' }
     }
   },
 }))

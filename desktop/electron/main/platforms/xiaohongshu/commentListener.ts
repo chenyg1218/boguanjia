@@ -101,6 +101,7 @@ export class XiaohongshuCommentListener {
   private client: CDPSession | null = null
   private accountName = ''
   private handleComment: (comment: LiveMessage) => void = () => {}
+  private listening = false
 
   constructor(private page: Page) {
     this.handleWebSocketResponse = this.handleWebSocketResponse.bind(this)
@@ -112,11 +113,16 @@ export class XiaohongshuCommentListener {
     return await context.newCDPSession(this.page)
   }
 
-  async startCommentListener(onComment: (comment: LiveMessage) => void): Promise<void> {
+  async startCommentListener(
+    onComment: (comment: LiveMessage) => void,
+    _onLiveEnded?: (reason: string) => void,
+  ): Promise<void> {
+    // 停播检测已上移到 XiaohongshuLiveEndedWatcher，由 AccountSession 统一调度
     if (!this.client) {
       this.client = await this.getCDPSession()
     }
     this.handleComment = onComment
+    this.listening = true
     this.client.send('Network.enable')
     this.client.on('Network.webSocketFrameReceived', this.handleWebSocketResponse)
     // 还有主动发送的消息，不会通过 WebSocket
@@ -183,6 +189,7 @@ export class XiaohongshuCommentListener {
   }
 
   stopCommentListener(): void {
+    this.listening = false
     this.client?.off('Network.webSocketFrameReceived', this.handleWebSocketResponse)
     this.client?.send('Network.disable')
     this.page.off('response', this.handleResponse)

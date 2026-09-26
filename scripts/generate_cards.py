@@ -26,7 +26,7 @@ def main() -> None:
         "--plan",
         choices=("pro", "flagship"),
         default="pro",
-        help="卡密档位：pro=专业版(3账号)，flagship=旗舰版(无上限)",
+        help="卡密档位：pro=专业版(单平台·3个账号)，flagship=旗舰版(无上限)",
     )
     parser.add_argument(
         "--out-dir",

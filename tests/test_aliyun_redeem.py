@@ -94,6 +94,61 @@ def test_validate_after_redeem(redeem_mod):
     assert data["revoked"] is False
     assert data["expires_at"]
     assert data["server_time"]
+    assert data.get("bound_platform") == ""
+
+
+def test_bind_platform_first_and_lock(redeem_mod):
+    mid = "22" * 16
+    code, data = redeem_mod.bind_platform(mid, "douyin")
+    assert code == 200
+    assert data["ok"] is True
+    assert data["bound_platform"] == "douyin"
+    assert data["replay"] is False
+
+    code2, data2 = redeem_mod.bind_platform(mid, "douyin")
+    assert code2 == 200
+    assert data2["replay"] is True
+    assert data2["bound_platform"] == "douyin"
+
+    code3, data3 = redeem_mod.bind_platform(mid, "taobao")
+    assert code3 == 409
+    assert data3["ok"] is False
+    assert data3["bound_platform"] == "douyin"
+
+    code4, data4 = redeem_mod.validate(mid)
+    assert code4 == 200
+    assert data4["known"] is False
+    assert data4["bound_platform"] == "douyin"
+    assert data4["plan"] == "free"
+
+
+def test_validate_heals_bound_platform(redeem_mod):
+    mid = "33" * 16
+    _insert(redeem_mod, "CARD-H", 5)
+    redeem_mod.redeem("CARD-H", mid)
+    code, data = redeem_mod.validate(mid, bound_platform="kuaishou")
+    assert code == 200
+    assert data["bound_platform"] == "kuaishou"
+    # 服务端已绑定后不可被 validate 覆盖
+    code2, data2 = redeem_mod.validate(mid, bound_platform="taobao")
+    assert code2 == 200
+    assert data2["bound_platform"] == "kuaishou"
+
+
+def test_redeem_preserves_bound_platform(redeem_mod):
+    mid = "44" * 16
+    assert redeem_mod.bind_platform(mid, "wxchannel")[0] == 200
+    _insert(redeem_mod, "CARD-P", 10)
+    code, data = redeem_mod.redeem("CARD-P", mid)
+    assert code == 200
+    assert data["ok"] is True
+    assert data["bound_platform"] == "wxchannel"
+
+
+def test_bind_platform_rejects_invalid(redeem_mod):
+    code, data = redeem_mod.bind_platform("55" * 16, "not-a-platform")
+    assert code == 400
+    assert data["ok"] is False
 
 
 def test_redeem_other_machine_forbidden(redeem_mod):

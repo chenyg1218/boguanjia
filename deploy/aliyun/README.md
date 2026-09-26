@@ -10,7 +10,7 @@
 | 域名 | `license.sugaiming.com` | `bgj-license.sugaiming.com` |
 | 客户端 | 金豆助手 | 播管家桌面端 |
 
-大陆用户直连 `POST /redeem`、`POST /validate`。响应均含 `server_time`。
+大陆用户直连 `POST /redeem`、`POST /validate`、`POST /bind-platform`。响应均含 `server_time`。
 
 ## 商品规则（播管家）
 
@@ -18,6 +18,7 @@
 - **同档续充**：叠加天数  
 - **专业机上充旗舰卡**：升级为旗舰并叠加天数  
 - **旗舰未到期充专业卡**：拒绝且不烧卡  
+- **基础/专业单平台**：绑定成功后写入 `machines.bound_platform`；校验/心跳带回；本地清除后仍按服务端锁定，不可换绑  
 
 ## 已部署（目标形态）
 
@@ -25,6 +26,7 @@
 - 健康检查：`https://license.sugaiming.com/bgj/health`
 - 核销：`https://license.sugaiming.com/bgj/redeem`
 - 心跳：`https://license.sugaiming.com/bgj/validate`
+- 平台绑定：`https://license.sugaiming.com/bgj/bind-platform`
 - 源站：本机 `127.0.0.1:8081`（nginx `/bgj/` 反代；金豆仍为 `/` → `:8080`）
 - 数据：`/opt/boguanjia-license/data/cards.db`（**与金豆库分离**）
 - 服务：`systemctl status boguanjia-license nginx`
@@ -62,7 +64,7 @@ sudo systemctl restart boguanjia-license
 { "card": "XXXX", "machine_id": "32位本机指纹" }
 ```
 
-成功示例含 `plan` / `max_accounts`。规则：
+成功示例含 `plan` / `max_accounts` / `bound_platform`。规则：
 
 - **同档续时长，高档可升级，低档在高档未到期时拒绝且不烧卡**
 - `replay: true` 时不再加天
@@ -70,7 +72,21 @@ sudo systemctl restart boguanjia-license
 
 ### POST /validate
 
-返回 `server_time`、`known` / `revoked` / `expired`、`expires_at` / `plan`。
+```json
+{ "machine_id": "32位本机指纹", "bound_platform": "可选，本地已绑时用于治愈上报" }
+```
+
+返回 `server_time`、`known` / `revoked` / `expired`、`expires_at` / `plan` / `bound_platform`。  
+若服务端尚未绑定且请求携带合法 `bound_platform`，会写入后带回；已绑定则不可覆盖。
+
+### POST /bind-platform
+
+```json
+{ "machine_id": "32位本机指纹", "platform": "douyin" }
+```
+
+首次绑定写入服务端；同平台重放 `replay: true`；换绑 `409` 并带回已绑定平台。  
+尚无卡密记录的机器会创建占位行（到期为占位时间）；`/validate` 对此返回 `known: false` 但仍带回 `bound_platform`，避免基础版误报「授权已过期」。
 
 ## HTTPS
 

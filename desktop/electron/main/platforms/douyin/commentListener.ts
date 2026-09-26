@@ -3,12 +3,15 @@ import { sleep } from '#/utils'
 import type { ICommentListener } from '../IPlatform'
 import { SELECTORS, URLS } from './constant'
 
+const KEEP_ALIVE_POLL_MS = 3_000
+
 export class ControlListener implements ICommentListener {
   readonly _isCommentListener = true
 
   private isRunning = false
   private hostAccountName = ''
   private handleComment: (comment: DouyinLiveMessage) => void = () => {}
+
   constructor(private page: Page) {
     this.handleResponse = this.handleResponse.bind(this)
   }
@@ -17,7 +20,12 @@ export class ControlListener implements ICommentListener {
     this.hostAccountName = name.trim()
   }
 
-  startCommentListener(onComment: (comment: DouyinLiveMessage) => void) {
+  startCommentListener(
+    onComment: (comment: DouyinLiveMessage) => void,
+    _source?: CommentListenerConfig['source'],
+    _onLiveEnded?: (reason: string) => void,
+  ) {
+    // 停播检测已上移到 DouyinLiveEndedWatcher，由 AccountSession 统一调度
     this.handleComment = onComment
     this.isRunning = true
     this.page.on('response', this.handleResponse)
@@ -61,7 +69,8 @@ export class ControlListener implements ICommentListener {
 
   private async keepPageRunning() {
     if (!this.isRunning) return
-    // 检查是否弹出了保护窗口
+
+    // 检查是否弹出了保护窗口（不含直播总结弹窗）
     for (const selector of Object.values(SELECTORS.overlays)) {
       const element = await this.page.$(selector)
       if (element) {
@@ -74,7 +83,7 @@ export class ControlListener implements ICommentListener {
       await newCommentButton.dispatchEvent('click')
     }
 
-    await sleep(3000)
+    await sleep(KEEP_ALIVE_POLL_MS)
     this.keepPageRunning()
   }
 
@@ -121,6 +130,7 @@ export class CompassListener implements ICommentListener {
   protected compassPage: Page | undefined
   private hostAccountName = ''
   private handleComment: (comment: DouyinLiveMessage) => void = () => {}
+
   constructor(
     private platform: 'buyin' | 'douyin',
     protected page: Page,
@@ -251,7 +261,12 @@ export class CompassListener implements ICommentListener {
     }
   }
 
-  async startCommentListener(onComment: (comment: DouyinLiveMessage) => void) {
+  async startCommentListener(
+    onComment: (comment: DouyinLiveMessage) => void,
+    _source?: CommentListenerConfig['source'],
+    _onLiveEnded?: (reason: string) => void,
+  ) {
+    // 停播检测已上移到 DouyinLiveEndedWatcher，由 AccountSession 统一调度
     this.handleComment = onComment
     await this.connectCompass()
     this.listenResponse()

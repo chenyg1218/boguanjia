@@ -8,6 +8,7 @@ import { CompassListener, ControlListener } from '../douyin/commentListener'
 import { connect, ensurePage, openUrlByElement } from '../helper'
 import type {
   ICommentListener,
+  ILiveEndedWatch,
   IPerformComment,
   IPerformPopup,
   IPlatform,
@@ -21,12 +22,19 @@ const PLATFORM_NAME = '巨量百应' as const
  * 巨量百应
  */
 export class BuyinPlatform
-  implements IPlatform, IPerformPopup, IPerformComment, ICommentListener, ISendRedPacket
+  implements
+    IPlatform,
+    IPerformPopup,
+    IPerformComment,
+    ICommentListener,
+    ISendRedPacket,
+    ILiveEndedWatch
 {
   readonly _isSendRedPacket = true
   readonly _isPerformComment = true
   readonly _isPerformPopup = true
   readonly _isCommentListener = true
+  readonly _isLiveEndedWatch = true
 
   private mainPage: Page | null = null
   private commentListener: ICommentListener | null = null
@@ -104,7 +112,11 @@ export class BuyinPlatform
     return await DouyinPlatform.prototype.performComment.call(this, message, pinTop)
   }
 
-  startCommentListener(onComment: (comment: LiveMessage) => void, source: 'control' | 'compass') {
+  startCommentListener(
+    onComment: (comment: LiveMessage) => void,
+    source: 'control' | 'compass',
+    onEnded?: (reason: string) => void,
+  ) {
     const pageResult = ensurePage(this.mainPage)
     if (Result.isFailure(pageResult)) {
       throw pageResult.error
@@ -119,11 +131,19 @@ export class BuyinPlatform
       listener.setHostAccountName(this.accountName)
       this.commentListener = listener
     }
-    return this.commentListener.startCommentListener(onComment, source)
+    return this.commentListener.startCommentListener(onComment, source, onEnded)
   }
 
   stopCommentListener(): void {
     this.commentListener?.stopCommentListener()
+  }
+
+  startLiveEndedWatch(onEnded: (reason: string) => void) {
+    return DouyinPlatform.prototype.startLiveEndedWatch.call(this, onEnded)
+  }
+
+  stopLiveEndedWatch() {
+    return DouyinPlatform.prototype.stopLiveEndedWatch.call(this)
   }
 
   getCommentListenerPage(): Page {

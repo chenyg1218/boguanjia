@@ -20,6 +20,8 @@ import { useAutoPopUpActions, useCurrentAutoPopUp } from '@/hooks/useAutoPopUp'
 import { useCurrentLiveControl } from '@/hooks/useLiveControl'
 import { useToast } from '@/hooks/useToast'
 import { parseGoodsIdBatch } from '@/utils/goodsIds'
+import { WizardHighlight } from '@/components/onboarding/WizardTarget'
+import { useGoodsCardTab } from '../GoodsCardTabContext'
 import GoodsListItem from './GoodsListItem'
 import ShortcutConfigTab from './ShortcutConfigTab'
 
@@ -175,7 +177,7 @@ const CommonList = () => {
           </div>
         </div>
         <p className="text-sm text-muted-foreground">
-          填中控台商品列表里的序号。循环次数 = 这一轮连续弹几次；间隔填 0 就用下面的全局间隔。
+          填中控台商品列表里的序号。循环次数 = 这一轮连续弹几次；时长填 0 就用下面的每品讲解时长。
         </p>
       </div>
 
@@ -233,23 +235,35 @@ const CommonList = () => {
 
 // 商品列表卡片组件
 const GoodsListCard = React.memo(() => {
+  const tabCtx = useGoodsCardTab()
+  const [localTab, setLocalTab] = useState<'goods-list' | 'shortcuts'>('goods-list')
+  const tab = tabCtx?.tab ?? localTab
+  const setTab = tabCtx?.setTab ?? setLocalTab
+
   return (
     <Card>
       <CardContent className="pt-6">
-        <Tabs defaultValue="goods-list" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="goods-list">商品列表</TabsTrigger>
-            <TabsTrigger value="shortcuts">快捷键配置</TabsTrigger>
-          </TabsList>
+        {/* 高亮挂在 Tabs 根上：快捷键 Tab 未激活时目标也始终存在，避免「去配快捷键」无反应 */}
+        <WizardHighlight targetId="auto-popup-shortcuts">
+          <Tabs
+            value={tab}
+            onValueChange={value => setTab(value as 'goods-list' | 'shortcuts')}
+            className="w-full"
+          >
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="goods-list">商品列表</TabsTrigger>
+              <TabsTrigger value="shortcuts">快捷键配置</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="goods-list" className="space-y-6 mt-4">
-            <CommonList />
-          </TabsContent>
+            <TabsContent value="goods-list" className="space-y-6 mt-4">
+              <CommonList />
+            </TabsContent>
 
-          <TabsContent value="shortcuts" className="mt-4">
-            <ShortcutConfigTab />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="shortcuts" className="mt-4">
+              <ShortcutConfigTab />
+            </TabsContent>
+          </Tabs>
+        </WizardHighlight>
       </CardContent>
     </Card>
   )

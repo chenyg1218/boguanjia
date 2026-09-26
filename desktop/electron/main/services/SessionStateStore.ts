@@ -68,6 +68,15 @@ class SessionStateStore {
       logger.error('删除会话状态失败：', error)
     }
   }
+
+  /** 是否曾成功保存过登录态（用于老用户平台绑定迁移） */
+  exists(accountId: string): boolean {
+    try {
+      return fs.existsSync(this.filePath(accountId))
+    } catch {
+      return false
+    }
+  }
 }
 
 export const sessionStateStore = new SessionStateStore()

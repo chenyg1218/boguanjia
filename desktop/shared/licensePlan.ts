@@ -1,4 +1,4 @@
-/** 授权档位：基础版 / 专业版（3 账号）/ 旗舰版（无上限） */
+/** 授权档位：基础版 / 专业版（单平台 · 3个账号）/ 旗舰版（无上限） */
 export type LicensePlan = 'free' | 'pro' | 'flagship'
 
 export const LICENSE_PLAN_RANK: Record<LicensePlan, number> = {

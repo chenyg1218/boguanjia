@@ -56,23 +56,6 @@ interface TaobaoComment {
   timestamp: string
 }
 
-interface ReplyJSON {
-  /** 回复的内容 */
-  content: string
-  /** 主播回复@xxx */
-  headerline: string
-  /** 引用的内容 */
-  quote: string
-  /** 回复评论 id，对应 TaobaoComment['commentId']，但这里竟然是 number? */
-  replyToCommentId: number
-  /** 用户的淘宝昵称 */
-  replyToUserNick: string
-  /** 'manual_reply' | ... */
-  targetType: string
-  /** 'simple' */
-  type: string
-}
-
 export class TaobaoCommentListener {
   constructor(
     private page: Page,
@@ -81,7 +64,8 @@ export class TaobaoCommentListener {
     this.handleResponse = this.handleResponse.bind(this)
   }
 
-  async start() {
+  async start(_onLiveEnded?: (reason: string) => void) {
+    // 停播检测已上移到 TaobaoLiveEndedWatcher，由 AccountSession 统一调度
     this.page.on('response', this.handleResponse)
   }
 
