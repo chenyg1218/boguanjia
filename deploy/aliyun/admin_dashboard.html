@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>播管家 · 运营看板</title>
+  <style>
+    :root {
+      --sidebar: #001529;
+      --sidebar-hover: #000c17;
+      --sidebar-active: #1677ff;
+      --bg: #f0f2f5;
+      --panel: #ffffff;
+      --line: #f0f0f0;
+      --border: #d9d9d9;
+      --text: #1f1f1f;
+      --muted: #8c8c8c;
+      --accent: #1677ff;
+      --accent-hover: #4096ff;
+      --ok: #52c41a;
+      --warn: #faad14;
+      --danger: #ff4d4f;
+      --shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.57;
+    }
+    a { color: var(--accent); }
+    button, input, select { font: inherit; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      background: #f5f5f5;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    /* —— 登录 —— */
+    #loginBox, #appBox { display: none; }
+    #loginBox.show { display: flex; }
+    #appBox.show { display: flex; }
+    body.login-mode { background: #0b1220; }
+
+    #loginBox {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+      background:
+        radial-gradient(ellipse 70% 50% at 50% 0%, rgba(22, 119, 255, 0.22), transparent 55%),
+        linear-gradient(160deg, #0b1220 0%, #111827 50%, #0f172a 100%);
+    }
+    .login-card {
+      width: 100%;
+      max-width: 400px;
+      background: #fff;
+      border-radius: 12px;
+      padding: 40px 36px 32px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+    }
+    .login-brand { text-align: center; margin-bottom: 28px; }
+    .login-mark {
+      width: 48px; height: 48px; margin: 0 auto 14px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #1677ff, #0958d9);
+      display: grid; place-items: center;
+      color: #fff; font-size: 20px; font-weight: 700;
+    }
+    .login-brand h1 {
+      margin: 0 0 6px; font-size: 22px; font-weight: 600; color: #1f1f1f;
+    }
+    .login-brand p { margin: 0; color: var(--muted); font-size: 13px; }
+    .login-form { display: flex; flex-direction: column; gap: 16px; }
+    .login-form label {
+      display: flex; flex-direction: column; gap: 8px;
+      font-size: 13px; color: #595959; font-weight: 500;
+    }
+    .login-form input {
+      width: 100%; padding: 10px 12px;
+      border: 1px solid var(--border); border-radius: 8px;
+      background: #fff; color: var(--text); outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .login-form input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.15);
+    }
+    .login-form button[type="submit"],
+    .login-form .btn-preview {
+      width: 100%; margin-top: 4px; padding: 10px 16px;
+      border: none; border-radius: 8px;
+      background: var(--accent); color: #fff; font-weight: 600;
+      cursor: pointer; transition: background .15s;
+    }
+    .login-form button[type="submit"]:hover { background: var(--accent-hover); }
+    .login-form .btn-preview {
+      margin-top: 0;
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .login-form .btn-preview:hover { color: var(--accent); border-color: var(--accent); }
+    .login-hint {
+      display: none;
+      margin: 0 0 4px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #fff7e6;
+      color: #ad6800;
+      font-size: 12px;
+      line-height: 1.5;
+      text-align: left;
+    }
+    .login-hint.show { display: block; }
+    .err { color: var(--danger); font-size: 13px; margin-top: 4px; }
+    .login-form .err { min-height: 1.2em; text-align: center; margin: 0; }
+
+    /* —— 后台壳 —— */
+    #appBox {
+      min-height: 100vh;
+      width: 100%;
+    }
+    .sidebar {
+      width: 220px;
+      flex-shrink: 0;
+      background: var(--sidebar);
+      color: rgba(255, 255, 255, 0.65);
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+    .sidebar-brand {
+      height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .sidebar-brand .mark {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: linear-gradient(135deg, #1677ff, #0958d9);
+      display: grid; place-items: center;
+      color: #fff; font-weight: 700; font-size: 14px; flex-shrink: 0;
+    }
+    .sidebar-brand .name {
+      color: #fff; font-weight: 600; font-size: 15px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .sidebar-nav {
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+    }
+    .sidebar-nav .nav-label {
+      padding: 8px 12px 6px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.35);
+      letter-spacing: 0.04em;
+    }
+    .sidebar-nav button {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; text-align: left;
+      padding: 10px 14px;
+      border: none; border-radius: 8px;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.65);
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .sidebar-nav button:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .sidebar-nav button.active {
+      color: #fff;
+      background: var(--sidebar-active);
+    }
+    .sidebar-nav .ico {
+      width: 18px; text-align: center; opacity: 0.9; font-size: 14px;
+    }
+    .sidebar-foot {
+      padding: 12px 16px 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.35);
+    }
+
+    .main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .topbar {
+      height: 64px;
+      background: #fff;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    .topbar h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .topbar .sub {
+      margin: 2px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .topbar-actions { display: flex; align-items: center; gap: 8px; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      height: 32px; padding: 0 14px;
+      border-radius: 6px; border: 1px solid transparent;
+      cursor: pointer; font-weight: 500; font-size: 13px;
+      transition: all .15s;
+    }
+    .btn-primary {
+      background: var(--accent); color: #fff; border-color: var(--accent);
+    }
+    .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+    .btn-default {
+      background: #fff; color: var(--text); border-color: var(--border);
+    }
+    .btn-default:hover { color: var(--accent); border-color: var(--accent); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .content { padding: 20px 24px 40px; }
+
+    .filters {
+      background: var(--panel);
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      padding: 16px 20px;
+      margin-bottom: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 16px;
+      align-items: end;
+    }
+    .filters label {
+      display: flex; flex-direction: column; gap: 6px;
+      font-size: 12px; color: var(--muted);
+    }
+    .filters input,
+    .filters select {
+      height: 32px;
+      min-width: 140px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      outline: none;
+    }
+    .filters input:focus,
+    .filters select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
+    }
+    .filters .filter-actions {
+      display: flex; gap: 8px; margin-left: auto; align-items: center;
+    }
+
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .metric {
+      background: var(--panel);
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      padding: 18px 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .metric::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: var(--accent);
+      border-radius: 3px 0 0 3px;
+    }
+    .metric .k {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .metric .v {
+      margin-top: 8px;
+      font-size: 26px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      color: #141414;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .card {
+      background: var(--panel);
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .card-hd {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .card-hd h3 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .card-hd .hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .card-bd { padding: 16px 20px 20px; }
+
+    .chart {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(22px, 1fr));
+      gap: 4px;
+      align-items: end;
+      height: 160px;
+      padding-bottom: 22px;
+    }
+    .bar {
+      background: linear-gradient(180deg, #69b1ff, #1677ff);
+      border-radius: 4px 4px 0 0;
+      min-height: 2px;
+      position: relative;
+      transition: filter .15s;
+    }
+    .bar:hover { filter: brightness(1.08); }
+    .bar span {
+      position: absolute;
+      bottom: -18px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      text-align: left;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    th {
+      background: #fafafa;
+      color: #595959;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    tbody tr:hover { background: #fafafa; }
+    tbody tr:last-child td { border-bottom: none; }
+    .muted { color: var(--muted); }
+    .ok { color: var(--ok); font-weight: 500; }
+    .warn { color: var(--warn); font-weight: 500; }
+    .tag {
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      background: #e6f4ff;
+      color: #0958d9;
+    }
+    .tag-ok { background: #f6ffed; color: #389e0d; }
+    .tag-warn { background: #fffbe6; color: #d48806; }
+
+    @media (max-width: 900px) {
+      #appBox { flex-direction: column; }
+      .sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+      }
+      .sidebar-nav { flex-direction: row; flex-wrap: wrap; }
+      .sidebar-nav .nav-label, .sidebar-foot { display: none; }
+      .sidebar-nav button { width: auto; }
+      .filters .filter-actions { margin-left: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body class="login-mode">
+  <div id="loginBox" class="show">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="login-mark" aria-hidden="true">播</div>
+        <h1>播管家 · 运营看板</h1>
+        <p>请输入管理密码以继续</p>
+      </div>
+      <form id="loginForm" class="login-form">
+        <div id="localHint" class="login-hint">
+          当前是本地文件预览，无法连接服务器登录。可点下方「本地预览」查看后台界面；真实登录请打开线上地址。
+        </div>
+        <label>
+          管理密码
+          <input type="password" id="password" autocomplete="current-password" required placeholder="输入管理密码" />
+        </label>
+        <button type="submit">登录</button>
+        <button type="button" class="btn-preview" id="previewBtn" style="display:none">本地预览</button>
+        <div id="loginErr" class="err"></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="appBox">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="mark">播</div>
+        <div class="name">播管家运营台</div>
+      </div>
+      <nav class="sidebar-nav tabs">
+        <div class="nav-label">数据看板</div>
+        <button type="button" data-tab="overview" class="active">
+          <span class="ico">▣</span>概览
+        </button>
+        <button type="button" data-tab="platforms">
+          <span class="ico">◫</span>平台与连接
+        </button>
+        <button type="button" data-tab="tasks">
+          <span class="ico">☰</span>功能使用
+        </button>
+      </nav>
+      <div class="sidebar-foot">内部运营 · 勿对外分享</div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">概览</h1>
+          <p class="sub">启动人数 · 功能任务 · 平台选择 · 中控连接成功率</p>
+        </div>
+        <div class="topbar-actions">
+          <button type="button" class="btn btn-default" id="logoutBtn">退出登录</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <div class="filters">
+          <label>
+            日期
+            <input type="date" id="day" />
+          </label>
+          <label>
+            趋势天数
+            <select id="days">
+              <option value="7">近 7 天</option>
+              <option value="14">近 14 天</option>
+              <option value="30" selected>近 30 天</option>
+            </select>
+          </label>
+          <label>
+            平台
+            <select id="platform">
+              <option value="">全部</option>
+              <option value="douyin">抖音小店</option>
+              <option value="buyin">巨量百应</option>
+              <option value="eos">抖音团购</option>
+              <option value="xiaohongshu">小红书千帆</option>
+              <option value="pgy">小红书蒲公英</option>
+              <option value="wxchannel">视频号</option>
+              <option value="kuaishou">快手小店</option>
+              <option value="taobao">淘宝</option>
+            </select>
+          </label>
+          <label>
+            套餐
+            <select id="plan">
+              <option value="">全部</option>
+              <option value="free">基础版</option>
+              <option value="pro">专业版</option>
+              <option value="flagship">旗舰版</option>
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button type="button" class="btn btn-primary" id="refreshBtn">刷新数据</button>
+          </div>
+          <div id="loadErr" class="err" style="width:100%;margin:0"></div>
+        </div>
+
+        <section id="tab-overview" class="panel active">
+          <div class="metrics" id="metrics"></div>
+          <div class="card">
+            <div class="card-hd">
+              <h3>日活趋势</h3>
+              <span class="hint">启动机器数</span>
+            </div>
+            <div class="card-bd">
+              <div class="chart" id="trendChart"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hd">
+              <h3>版本分布</h3>
+              <span class="hint">当日有事件的机器</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>版本</th><th>机器数</th></tr></thead>
+                <tbody id="versionsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-platforms" class="panel">
+          <div class="card">
+            <div class="card-hd">
+              <h3>平台与连接</h3>
+              <span class="hint">选择 / 尝试 / 成功率</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>平台</th><th>选择次数</th><th>连接尝试</th><th>成功</th><th>失败</th><th>成功率</th>
+                  </tr>
+                </thead>
+                <tbody id="platformsBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hd">
+              <h3>连接失败原因</h3>
+              <span class="hint">Top 排行</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>原因</th><th>次数</th></tr></thead>
+                <tbody id="failBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-tasks" class="panel">
+          <div class="card">
+            <div class="card-hd">
+              <h3>功能使用</h3>
+              <span class="hint">按任务类型汇总</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>任务类型</th><th>启动次数</th><th>使用机器</th><th>人均次数</th></tr>
+                </thead>
+                <tbody id="tasksBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hd">
+              <h3>当日机器明细</h3>
+              <span class="hint">仅短哈希</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>机器</th><th>套餐</th><th>平台</th><th>启动</th><th>任务</th><th>连上中控</th></tr>
+                </thead>
+                <tbody id="machinesBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const TOKEN_KEY = 'bgj_admin_token'
+    const PLATFORM_NAMES = {
+      douyin: '抖音小店',
+      buyin: '巨量百应',
+      eos: '抖音团购',
+      xiaohongshu: '小红书千帆',
+      pgy: '小红书蒲公英',
+      wxchannel: '视频号',
+      kuaishou: '快手小店',
+      taobao: '淘宝',
+    }
+    const TASK_NAMES = {
+      'auto-popup': '自动弹窗',
+      'auto-comment': '自动发言',
+      'comment-listener': '自动回复',
+      'viewer-danmaku': '小号互动',
+      'send-batch-messages': '一键评论',
+    }
+    const PLAN_NAMES = { free: '基础版', pro: '专业版', flagship: '旗舰版' }
+    const TAB_TITLES = {
+      overview: '概览',
+      platforms: '平台与连接',
+      tasks: '功能使用',
+    }
+
+    const $ = (id) => document.getElementById(id)
+    const loginBox = $('loginBox')
+    const appBox = $('appBox')
+    const IS_LOCAL_FILE = location.protocol === 'file:'
+    let demoMode = false
+    const ADMIN_BASE = (() => {
+      if (IS_LOCAL_FILE) return './admin/'
+      let p = location.pathname.replace(/\/+$/, '')
+      if (!/\/admin$/i.test(p)) p += '/admin'
+      return p + '/'
+    })()
+    const adminUrl = (suffix) => ADMIN_BASE + String(suffix || '').replace(/^\//, '')
+
+    function todayLocal() {
+      const d = new Date()
+      const p = (n) => String(n).padStart(2, '0')
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+    }
+
+    function token() {
+      return sessionStorage.getItem(TOKEN_KEY) || ''
+    }
+
+    function mockStats() {
+      const day = todayLocal()
+      const trend = []
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date()
+        d.setDate(d.getDate() - i)
+        const p = (n) => String(n).padStart(2, '0')
+        trend.push({
+          day: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
+          dau: Math.floor(3 + Math.random() * 18),
+        })
+      }
+      return {
+        ok: true,
+        overview: {
+          dau: 12,
+          launches: 28,
+          task_starts: 46,
+          avg_tasks_per_machine: 3.8,
+          connect_rate: 86,
+          machine_connect_rate: 75,
+          licensed_machines: 3,
+        },
+        trend,
+        versions: [
+          { app_version: '1.2.0', machines: 2 },
+          { app_version: '1.1.4', machines: 1 },
+        ],
+        platforms: [
+          { platform: 'douyin', selected: 18, attempts: 16, ok: 14, fail: 2, success_rate: 87.5 },
+          { platform: 'buyin', selected: 6, attempts: 5, ok: 4, fail: 1, success_rate: 80 },
+        ],
+        fail_reasons: [
+          { reason: '直播间未开播', count: 2 },
+          { reason: '登录态失效', count: 1 },
+        ],
+        tasks: [
+          { task_type: 'auto-popup', starts: 20, machines: 3, avg_per_machine: 6.7 },
+          { task_type: 'auto-comment', starts: 15, machines: 2, avg_per_machine: 7.5 },
+          { task_type: 'viewer-danmaku', starts: 11, machines: 1, avg_per_machine: 11 },
+        ],
+        machines: [
+          { machine: 'a1b2c3d4', plan: 'flagship', platform: 'douyin', launches: 4, tasks: 12, connected: true },
+          { machine: 'e5f60718', plan: 'pro', platform: 'buyin', launches: 2, tasks: 5, connected: true },
+          { machine: '90abcdef', plan: 'free', platform: 'douyin', launches: 1, tasks: 0, connected: false },
+        ],
+        day,
+      }
+    }
+
+    function showLogin() {
+      demoMode = false
+      document.body.classList.add('login-mode')
+      loginBox.classList.add('show')
+      appBox.classList.remove('show')
+      setTimeout(() => $('password').focus(), 0)
+    }
+
+    function showApp() {
+      document.body.classList.remove('login-mode')
+      loginBox.classList.remove('show')
+      appBox.classList.add('show')
+      if (!$('day').value) $('day').value = todayLocal()
+      loadStats()
+    }
+
+    function enterDemo() {
+      demoMode = true
+      sessionStorage.removeItem(TOKEN_KEY)
+      showApp()
+    }
+
+    async function api(path, opts = {}) {
+      const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {})
+      if (token()) headers['X-Admin-Token'] = token()
+      const res = await fetch(path, Object.assign({}, opts, { headers }))
+      const data = await res.json().catch(() => ({}))
+      if (res.status === 401 && path.indexOf('/admin/login') < 0) {
+        sessionStorage.removeItem(TOKEN_KEY)
+        showLogin()
+      }
+      return { res, data }
+    }
+
+    if (IS_LOCAL_FILE) {
+      $('localHint').classList.add('show')
+      $('previewBtn').style.display = 'block'
+      $('password').required = false
+    }
+
+    $('previewBtn').addEventListener('click', enterDemo)
+
+    $('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      $('loginErr').textContent = ''
+      if (IS_LOCAL_FILE) {
+        enterDemo()
+        return
+      }
+      const password = $('password').value
+      const btn = e.target.querySelector('button[type="submit"]')
+      if (btn) btn.disabled = true
+      try {
+        const { res, data } = await api(adminUrl('login'), {
+          method: 'POST',
+          body: JSON.stringify({ password }),
+        })
+        if (!res.ok || !data.ok || !data.token) {
+          $('loginErr').textContent = data.error || '登录失败'
+          return
+        }
+        sessionStorage.setItem(TOKEN_KEY, data.token)
+        $('password').value = ''
+        showApp()
+      } catch (err) {
+        $('loginErr').textContent =
+          '无法连接服务器：' + String(err && err.message ? err.message : err)
+      } finally {
+        if (btn) btn.disabled = false
+      }
+    })
+
+    $('logoutBtn').addEventListener('click', () => {
+      sessionStorage.removeItem(TOKEN_KEY)
+      showLogin()
+    })
+    $('refreshBtn').addEventListener('click', loadStats)
+
+    document.querySelectorAll('.tabs button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tabs button').forEach((b) => b.classList.remove('active'))
+        document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'))
+        btn.classList.add('active')
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active')
+        $('pageTitle').textContent = TAB_TITLES[btn.dataset.tab] || '运营看板'
+      })
+    })
+
+    function metric(k, v) {
+      return `<div class="metric"><div class="k">${k}</div><div class="v">${v}</div></div>`
+    }
+
+    function platformLabel(p) {
+      return PLATFORM_NAMES[p] || p || '-'
+    }
+
+    function taskLabel(t) {
+      return TASK_NAMES[t] || t || '-'
+    }
+
+    async function loadStats() {
+      $('loadErr').textContent = ''
+      $('refreshBtn').disabled = true
+      try {
+        if (demoMode || IS_LOCAL_FILE) {
+          render(mockStats())
+          $('loadErr').textContent = '本地预览：展示的是示例数据'
+          return
+        }
+        const q = new URLSearchParams({
+          day: $('day').value || todayLocal(),
+          days: $('days').value || '30',
+          platform: $('platform').value || '',
+          plan: $('plan').value || '',
+        })
+        const { res, data } = await api(adminUrl('api/stats?' + q.toString()))
+        if (!res.ok || !data.ok) {
+          $('loadErr').textContent = data.error || '加载失败'
+          return
+        }
+        render(data)
+      } catch (err) {
+        $('loadErr').textContent = String(err && err.message ? err.message : err)
+      } finally {
+        $('refreshBtn').disabled = false
+      }
+    }
+
+    function render(data) {
+      const o = data.overview || {}
+      $('metrics').innerHTML = [
+        metric('今日启动人数', o.dau ?? 0),
+        metric('今日启动次数', o.launches ?? 0),
+        metric('任务启动次数', o.task_starts ?? 0),
+        metric('人均任务次数', o.avg_tasks_per_machine ?? 0),
+        metric('连接成功率', (o.connect_rate ?? 0) + '%'),
+        metric('至少连成功机占比', (o.machine_connect_rate ?? 0) + '%'),
+        metric('有效授权机', o.licensed_machines ?? 0),
+      ].join('')
+
+      const trend = data.trend || []
+      const maxDau = Math.max(1, ...trend.map((t) => t.dau || 0))
+      $('trendChart').innerHTML = trend
+        .map((t) => {
+          const h = Math.max(2, Math.round(((t.dau || 0) / maxDau) * 100))
+          const label = (t.day || '').slice(5)
+          return `<div class="bar" style="height:${h}%" title="${t.day}: ${t.dau} 人"><span>${label}</span></div>`
+        })
+        .join('')
+
+      $('versionsBody').innerHTML = (data.versions || [])
+        .map((v) => `<tr><td><span class="tag">${v.app_version}</span></td><td>${v.machines}</td></tr>`)
+        .join('') || '<tr><td colspan="2" class="muted">暂无数据</td></tr>'
+
+      $('platformsBody').innerHTML = (data.platforms || [])
+        .map(
+          (p) => `<tr>
+            <td>${platformLabel(p.platform)}</td>
+            <td>${p.selected}</td><td>${p.attempts}</td><td class="ok">${p.ok}</td>
+            <td class="warn">${p.fail}</td><td>${p.success_rate}%</td>
+          </tr>`,
+        )
+        .join('') || '<tr><td colspan="6" class="muted">暂无数据</td></tr>'
+
+      $('failBody').innerHTML = (data.fail_reasons || [])
+        .map((r) => `<tr><td>${r.reason}</td><td>${r.count}</td></tr>`)
+        .join('') || '<tr><td colspan="2" class="muted">暂无失败记录</td></tr>'
+
+      $('tasksBody').innerHTML = (data.tasks || [])
+        .map(
+          (t) => `<tr>
+            <td>${taskLabel(t.task_type)}</td>
+            <td>${t.starts}</td><td>${t.machines}</td><td>${t.avg_per_machine}</td>
+          </tr>`,
+        )
+        .join('') || '<tr><td colspan="4" class="muted">暂无数据</td></tr>'
+
+      $('machinesBody').innerHTML = (data.machines || [])
+        .map(
+          (m) => `<tr>
+            <td><code>${m.machine}</code></td>
+            <td>${PLAN_NAMES[m.plan] || m.plan || '-'}</td>
+            <td>${platformLabel(m.platform)}</td>
+            <td>${m.launches}</td><td>${m.tasks}</td>
+            <td><span class="tag ${m.connected ? 'tag-ok' : 'tag-warn'}">${m.connected ? '已连接' : '未连接'}</span></td>
+          </tr>`,
+        )
+        .join('') || '<tr><td colspan="6" class="muted">暂无数据</td></tr>'
+    }
+
+    if (token()) showApp()
+    else showLogin()
+  </script>
+</body>
+</html>

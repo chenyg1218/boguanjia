@@ -178,12 +178,17 @@ function AccountCard({
           </div>
           {accountDisabled ? (
             <p className="mt-0.5 text-[11px] text-amber-700/80">开通专业版/旗舰版后自动恢复</p>
-          ) : live?.accountName ? (
-            <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={live.accountName}>
-              {live.accountName}
+          ) : live?.isConnected === 'connected' ? (
+            <p
+              className="mt-0.5 truncate text-[11px] text-muted-foreground"
+              title={live.accountName || undefined}
+            >
+              {live.accountName?.trim() || '中控已连接'}
             </p>
+          ) : live?.isConnected === 'connecting' ? (
+            <p className="mt-0.5 text-[11px] text-muted-foreground/70">中控连接中…</p>
           ) : (
-            <p className="mt-0.5 text-[11px] text-muted-foreground/70">未登录中控</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground/70">未连接中控</p>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-focus-within:opacity-100">

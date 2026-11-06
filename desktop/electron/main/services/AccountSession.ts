@@ -1,4 +1,5 @@
 import { Result } from '@praha/byethrow'
+import type { Page } from 'playwright'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { type DisconnectReason, isResumableTaskType, type ResumableTaskType } from 'shared/session'
 import { TaskNotSupportedError, UnexpectedError } from '#/errors/AppError'
@@ -9,14 +10,22 @@ import {
   browserManager,
   type StorageState,
 } from '#/managers/BrowserSessionManager'
+import { viewerAccountManager } from '#/managers/ViewerAccountManager'
 import { platformFactory } from '#/platforms'
 import {
+  DouyinLiveStartedWatcher,
+  type LiveStartedRef,
+} from '#/platforms/douyin/liveEndedWatcher'
+import {
   type IPlatform,
+  isAudienceRoomUrl,
   isCommentListener,
   isLiveEndedWatch,
   isPerformComment,
   isPerformPopup,
+  type ResolvedAudienceRoomUrl,
 } from '#/platforms/IPlatform'
+import { audienceRoomCache } from '#/services/AudienceRoomCache'
 import {
   clearOutboundComments,
   forgetOutboundComment,
@@ -30,6 +39,13 @@ import type { ITask } from '#/tasks/ITask'
 import { TaskStopReason } from '#/tasks/ITask'
 import { createSendBatchMessageTask } from '#/tasks/SendBatchMessageTask'
 import windowManager from '#/windowManager'
+
+/** L2 解析失败后的重试间隔（有互动号时） */
+const RESOLVE_RETRY_MS = 2_000
+/** 等待互动号登录时的慢重试（主要靠登录事件触发，此处仅兜底） */
+const RESOLVE_WAIT_VIEWER_MS = 15_000
+/** 支持自动检测开播并缓存观众端链接的平台 */
+const AUTO_ROOM_CACHE_PLATFORMS: LiveControlPlatform[] = ['douyin', 'buyin']
 
 export type DesiredTaskStore = {
   getDesiredTasks: () => LiveControlTask[]
@@ -50,6 +66,14 @@ export class AccountSession {
   /** 避免 LIVE_ENDED 级联停任务时互相重入 */
   private cascadingLiveEnded = false
   private liveEndedWatching = false
+  /** 连接后检测开播（L1）并解析观众端链接（L2） */
+  private liveStartedWatching = false
+  private liveStartedWatcher: DouyinLiveStartedWatcher | null = null
+  private resolvingAudienceRoom = false
+  private resolveRetryTimer: ReturnType<typeof setTimeout> | null = null
+  /** 「等待互动号」提示只打一次，避免重试刷屏 */
+  private waitingViewerHintShown = false
+  private platformKey: LiveControlPlatform
 
   constructor(
     platformName: LiveControlPlatform,
@@ -57,7 +81,12 @@ export class AccountSession {
     private desired: DesiredTaskStore,
     private logger = createLogger(`@${account.name}`),
   ) {
+    this.platformKey = platformName
     this.platform = new platformFactory[platformName]()
+  }
+
+  get livePlatform(): LiveControlPlatform {
+    return this.platformKey
   }
 
   async connect(config: { headless?: boolean; storageState?: string }) {
@@ -93,10 +122,12 @@ export class AccountSession {
       this.logger.error('获取用户名失败：', error)
       windowManager.send(IPC_CHANNELS.tasks.liveControl.notifyAccountName, {
         ok: false,
+        accountId: this.account.id,
       })
     }
 
     await this.resumeDesiredTasks()
+    this.ensureLiveStartedWatch()
   }
 
   disconnect(reason: DisconnectReason = 'manual') {
@@ -106,6 +137,8 @@ export class AccountSession {
     this.logger.warn(`与中控台断开连接（${reason}）`)
     this.detachBrowserWatchers()
     this.stopLiveEndedWatch()
+    this.stopLiveStartedWatch()
+    this.clearAudienceRoomCache('disconnect')
     clearOutboundComments(this.account.id)
 
     if (reason === 'manual' || reason === 'license') {
@@ -289,6 +322,196 @@ export class AccountSession {
     } finally {
       this.cascadingLiveEnded = false
       this.stopLiveEndedWatch()
+      this.clearAudienceRoomCache('live_ended')
+    }
+  }
+
+  /**
+   * 中控连接后启动开播检测：
+   * L1 = 网络/DOM 拿到本场 room_id；L2 = 解析出观众端 URL 并预热。
+   */
+  private ensureLiveStartedWatch() {
+    if (this.liveStartedWatching) return
+    if (!AUTO_ROOM_CACHE_PLATFORMS.includes(this.platformKey)) return
+    if (!isAudienceRoomUrl(this.platform)) return
+    if (!this.browserSession) return
+
+    this.liveStartedWatching = true
+    this.liveStartedWatcher = new DouyinLiveStartedWatcher(this.browserSession.page)
+    this.liveStartedWatcher.start({
+      onStarted: ref => {
+        void this.onLiveStartedL1(ref)
+      },
+      onEnded: () => {
+        this.clearAudienceRoomCache('live_ended')
+      },
+    })
+  }
+
+  private stopLiveStartedWatch() {
+    this.liveStartedWatching = false
+    this.clearResolveRetry()
+    this.liveStartedWatcher?.stop()
+    this.liveStartedWatcher = null
+  }
+
+  /** L1：已开播（有 room_id），立刻记缓存并尝试解析 L2 */
+  private async onLiveStartedL1(ref: LiveStartedRef) {
+    if (this.disconnecting) return
+
+    const prev = audienceRoomCache.get()
+    // 本场已缓存可进房链接：忽略后续旁路 room_id，避免反复清缓存/预热
+    if (prev?.midAccountId === this.account.id && prev.roomUrl) {
+      return
+    }
+    const sameRoom =
+      prev?.midAccountId === this.account.id && prev.roomId === ref.roomId
+    const alreadyReady = sameRoom && Boolean(prev?.roomUrl)
+
+    audienceRoomCache.set({
+      midAccountId: this.account.id,
+      roomId: ref.roomId,
+      secUid: ref.secUid || (sameRoom ? prev?.secUid : undefined),
+      roomUrl: sameRoom ? prev?.roomUrl : undefined,
+    })
+
+    if (!sameRoom || !prev?.roomId) {
+      this.logger.success(`已检测到开播（room_id=${ref.roomId}）`)
+    }
+
+    // 有互动号时立刻用 room_id 预热（不必等 L2 解析完整链接）
+    if (!alreadyReady) {
+      void viewerAccountManager.warmupAll({
+        roomId: ref.roomId,
+        secUid: ref.secUid || (sameRoom ? prev?.secUid : undefined),
+        roomUrl: sameRoom ? prev?.roomUrl : undefined,
+      })
+    }
+
+    if (alreadyReady) return
+    await this.resolveAudienceRoomL2(ref)
+  }
+
+  /** L2：解析观众端链接 → 通知渲染进程 → 预热互动号 */
+  private async resolveAudienceRoomL2(ref: LiveStartedRef) {
+    if (this.resolvingAudienceRoom || this.disconnecting) return
+
+    const cached = audienceRoomCache.get()
+    if (
+      cached?.midAccountId === this.account.id &&
+      cached.roomId === ref.roomId &&
+      cached.roomUrl
+    ) {
+      return
+    }
+
+    this.resolvingAudienceRoom = true
+    try {
+      let viewerPage: Page | null = null
+      for (const session of viewerAccountManager.accountSessions.values()) {
+        const page = session.getLivePage()
+        if (page) {
+          viewerPage = page
+          break
+        }
+      }
+
+      // 无互动号：不反复 resolve，提示一次后慢轮询兜底；登录事件会立刻再触发
+      if (!viewerPage) {
+        if (!this.waitingViewerHintShown) {
+          this.waitingViewerHintShown = true
+          this.logger.info('已开播，等待互动号登录后解析进房链接…')
+        }
+        this.scheduleResolveRetry(ref, RESOLVE_WAIT_VIEWER_MS)
+        return
+      }
+
+      const result = await this.resolveAudienceRoomUrl(viewerPage, ref)
+      if (Result.isFailure(result)) {
+        const msg = result.error instanceof Error ? result.error.message : String(result.error)
+        const needViewer = /互动号已登录|无法解析观众端/.test(msg)
+        if (needViewer) {
+          if (!this.waitingViewerHintShown) {
+            this.waitingViewerHintShown = true
+            this.logger.info('已开播，等待互动号登录后解析进房链接…')
+          }
+          this.scheduleResolveRetry(ref, RESOLVE_WAIT_VIEWER_MS)
+        } else {
+          this.logger.warn('已开播，正在解析进房链接（将重试）：', result.error)
+          this.scheduleResolveRetry(ref, RESOLVE_RETRY_MS)
+        }
+        return
+      }
+
+      this.waitingViewerHintShown = false
+      audienceRoomCache.set({
+        midAccountId: this.account.id,
+        roomUrl: result.value.roomUrl,
+        roomId: result.value.roomId || ref.roomId,
+        secUid: result.value.secUid || ref.secUid,
+      })
+      this.logger.success(`已自动缓存本场直播间：${result.value.roomUrl}`)
+      windowManager.send(IPC_CHANNELS.tasks.viewerControl.roomReadyEvent, {
+        midAccountId: this.account.id,
+        roomUrl: result.value.roomUrl,
+        roomId: result.value.roomId || ref.roomId,
+        secUid: result.value.secUid || ref.secUid,
+      })
+      void viewerAccountManager.warmupAll(result.value)
+    } finally {
+      this.resolvingAudienceRoom = false
+    }
+  }
+
+  private scheduleResolveRetry(ref: LiveStartedRef, delayMs = RESOLVE_RETRY_MS) {
+    if (this.resolveRetryTimer || !this.liveStartedWatching) return
+    this.resolveRetryTimer = setTimeout(() => {
+      this.resolveRetryTimer = null
+      if (!this.liveStartedWatching || this.disconnecting) return
+      const cached = audienceRoomCache.get()
+      // 以缓存为准：误判停播清缓存后不再重试；缓存仍在则继续（不依赖 watcher 瞬时状态）
+      if (!cached || cached.midAccountId !== this.account.id) return
+      if (cached.roomUrl) return
+      if (cached.roomId && cached.roomId !== ref.roomId) return
+      void this.resolveAudienceRoomL2({
+        roomId: cached.roomId || ref.roomId,
+        secUid: cached.secUid || ref.secUid,
+      })
+    }, delayMs)
+  }
+
+  /** 互动号登录后：若已有 L1（room_id）但尚无观众端链接，立刻补解析 */
+  public retryAudienceRoomResolveIfNeeded() {
+    if (!this.liveStartedWatching || this.disconnecting) return
+    const cached = audienceRoomCache.get()
+    if (!cached || cached.midAccountId !== this.account.id) return
+    if (cached.roomUrl || !cached.roomId) return
+    this.clearResolveRetry()
+    void this.resolveAudienceRoomL2({
+      roomId: cached.roomId,
+      secUid: cached.secUid,
+    })
+  }
+
+  private clearResolveRetry() {
+    if (this.resolveRetryTimer) {
+      clearTimeout(this.resolveRetryTimer)
+      this.resolveRetryTimer = null
+    }
+  }
+
+  private clearAudienceRoomCache(reason: 'disconnect' | 'live_ended') {
+    this.clearResolveRetry()
+    this.waitingViewerHintShown = false
+    const had = audienceRoomCache.get()?.midAccountId === this.account.id
+    audienceRoomCache.clear(this.account.id)
+    if (had) {
+      windowManager.send(IPC_CHANNELS.tasks.viewerControl.roomClearedEvent, {
+        midAccountId: this.account.id,
+      })
+      if (reason === 'live_ended') {
+        this.logger.info('直播已结束，已清除缓存的直播间链接')
+      }
     }
   }
 
@@ -311,6 +534,30 @@ export class AccountSession {
       return result
     }
     return Result.fail(new TaskNotSupportedError({ taskName: `update-${type}` }))
+  }
+
+  /**
+   * 从中控台解析观众端本场直播间链接（小号互动进房用）。
+   * @param viewerPage 互动号浏览器页；中控只有内部 room_id 时用其转换 web_rid
+   */
+  public async resolveAudienceRoomUrl(
+    viewerPage?: Page | null,
+    known?: { roomId?: string; secUid?: string },
+  ): Result.ResultAsync<ResolvedAudienceRoomUrl, Error> {
+    if (!this.browserSession) {
+      return Result.fail(new Error('请先连接中控台'))
+    }
+    if (!isAudienceRoomUrl(this.platform)) {
+      return Result.fail(
+        new Error(`「${this.platform.platformName}」暂不支持从中控同步直播间链接`),
+      )
+    }
+    try {
+      const resolved = await this.platform.resolveAudienceRoomUrl(viewerPage, known)
+      return Result.succeed(resolved)
+    } catch (error) {
+      return Result.fail(error instanceof Error ? error : new Error(String(error)))
+    }
   }
 
   public async listGoodsIds(): Result.ResultAsync<number[], Error> {

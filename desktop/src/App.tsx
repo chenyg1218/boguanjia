@@ -20,6 +20,7 @@ import { useLiveControlStore } from './hooks/useLiveControl'
 import { useOnboardingStore } from './hooks/useOnboarding'
 import { useToast } from './hooks/useToast'
 import { useUpdateConfigStore, useUpdateStore } from './hooks/useUpdate'
+import { useViewerAccountsStore } from './hooks/useViewerAccounts'
 // v1.2 暂缓：语音读稿播放器
 // import { useVoiceBroadcastPlayer } from './hooks/useVoiceBroadcast'
 import './App.css'
@@ -45,6 +46,7 @@ function useGlobalIpcListener() {
     setIsListening(accountId, 'stopped')
     // 界面一律停掉；异常断连的 desired 仍保留，重连后由 tasksResumed 恢复
     useAutoReplyStore.getState().setIsRunning(accountId, false)
+    useViewerAccountsStore.getState().clearRoomEntry()
 
     const name = useAccounts.getState().accounts.find(a => a.id === accountId)?.name
     const prefix = name ? `「${name}」` : ''
@@ -115,6 +117,58 @@ function useGlobalIpcListener() {
     toast.error(`${prefix}评论监听已停止，自动回复已结束`)
   })
 
+  useIpcListener(IPC_CHANNELS.tasks.viewerControl.disconnectedEvent, ({ accountId, reason }) => {
+    const store = useViewerAccountsStore.getState()
+    store.setConnected(accountId, 'disconnected')
+    store.setRunning(accountId, false)
+    const name = store.accounts.find(a => a.id === accountId)?.name
+    const prefix = name ? `「${name}」` : ''
+    if (reason === 'unexpected') {
+      toast.error(`${prefix}互动号异常断开，请重新登录进房`)
+    } else if (reason !== 'manual') {
+      toast.error(`${prefix}互动号已断开`)
+    }
+  })
+
+  useIpcListener(IPC_CHANNELS.tasks.viewerControl.progressEvent, ({ accountId, message }) => {
+    useViewerAccountsStore.getState().setConnectHint(accountId, message)
+  })
+
+  useIpcListener(IPC_CHANNELS.tasks.viewerControl.roomReadyEvent, payload => {
+    useViewerAccountsStore.getState().setRoomEntry({
+      roomUrl: payload.roomUrl,
+      roomId: payload.roomId,
+      secUid: payload.secUid,
+    })
+  })
+
+  useIpcListener(IPC_CHANNELS.tasks.viewerControl.roomClearedEvent, () => {
+    useViewerAccountsStore.getState().clearRoomEntry()
+  })
+
+  useIpcListener(IPC_CHANNELS.tasks.viewerControl.notifyAccountName, params => {
+    if (!params.ok) return
+    const store = useViewerAccountsStore.getState()
+    const nick = params.accountName?.trim()
+    store.setAccountName(params.accountId, nick || '')
+    // 登录成功后用平台昵称替换默认「互动号N」（用户自定义名不覆盖）
+    if (!nick || nick === '观众号') return
+    const current = store.accounts.find(a => a.id === params.accountId)?.name ?? ''
+    if (!current || /^互动号\s*\d+$/.test(current.trim())) {
+      store.updateAccount(params.accountId, { name: nick })
+    }
+  })
+
+  useIpcListener(IPC_CHANNELS.tasks.viewerDanmaku.stoppedEvent, ({ accountId, reason }) => {
+    const store = useViewerAccountsStore.getState()
+    store.setRunning(accountId, false)
+    store.setEntering(accountId, false)
+    if (reason !== 'error') return
+    const name = store.accounts.find(a => a.id === accountId)?.name
+    const prefix = name ? `「${name}」` : ''
+    toast.error(`${prefix}小号互动已停止，可重新启动`)
+  })
+
   useIpcListener(IPC_CHANNELS.chrome.saveState, id => {
     // 登录态已由主进程加密落盘；清空 renderer 中可能残留的明文
     useChromeConfigStore.getState().clearStorageState(id)
@@ -123,6 +177,8 @@ function useGlobalIpcListener() {
   useIpcListener(IPC_CHANNELS.tasks.liveControl.notifyAccountName, params => {
     if (params.ok) {
       setAccountName(params.accountId, params.accountName || '')
+      // 新连上中控：清掉上一场残留的直播间展示，等开播检测再写入
+      useViewerAccountsStore.getState().clearRoomEntry()
     }
   })
 
@@ -147,6 +203,146 @@ function useGlobalIpcListener() {
   })
 }
 
+function useSyncLiveControlConnection() {
+  const setIsConnected = useLiveControlStore(s => s.setIsConnected)
+  const setAccountName = useLiveControlStore(s => s.setAccountName)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const sync = async () => {
+      try {
+        const connected = await window.ipcRenderer.invoke(
+          IPC_CHANNELS.tasks.liveControl.listConnected,
+        )
+        if (cancelled || !Array.isArray(connected)) return
+
+        const connectedIds = new Set(connected.map(c => c.accountId))
+        const store = useLiveControlStore.getState()
+
+        for (const { accountId, accountName } of connected) {
+          const current = store.contexts[accountId]?.isConnected
+          // 勿把「连接中」提前标成已连接（会话在 connect 完成前就会进 Map）
+          if (current !== 'connecting') {
+            setIsConnected(accountId, 'connected')
+          }
+          const existingName = store.contexts[accountId]?.accountName
+          if (!existingName && accountName && accountName !== '未定义账号') {
+            setAccountName(accountId, accountName)
+          }
+        }
+
+        // 主进程已无会话的账号，渲染层若仍显示已连接则纠正（勿打断 connecting）
+        for (const [accountId, ctx] of Object.entries(store.contexts)) {
+          if (
+            ctx.isConnected === 'connected' &&
+            !connectedIds.has(accountId)
+          ) {
+            setIsConnected(accountId, 'disconnected')
+          }
+        }
+      } catch {
+        /* 启动阶段主进程未就绪时忽略 */
+      }
+    }
+
+    const run = () => {
+      void sync()
+    }
+
+    if (useLiveControlStore.persist.hasHydrated()) {
+      run()
+    }
+    const unsub = useLiveControlStore.persist.onFinishHydration(run)
+    // 连接完成后偶发状态不同步时再对齐一次
+    const timer = window.setTimeout(run, 1500)
+
+    return () => {
+      cancelled = true
+      unsub()
+      window.clearTimeout(timer)
+    }
+  }, [setIsConnected, setAccountName])
+}
+
+/**
+ * 启动后按需后台恢复互动号登录态并预热直播间。
+ * 需在「小号互动」开启「启动时自动恢复」；无本地登录态或需重新扫码的号会跳过。
+ */
+function useAutoReconnectViewerAccounts() {
+  useEffect(() => {
+    let cancelled = false
+    let ran = false
+
+    const run = async () => {
+      if (ran || cancelled) return
+      if (!useViewerAccountsStore.persist.hasHydrated()) return
+      if (!useChromeConfigStore.persist.hasHydrated()) return
+      ran = true
+
+      const { accounts, autoReconnectOnLaunch } = useViewerAccountsStore.getState()
+      if (!autoReconnectOnLaunch || accounts.length === 0) return
+
+      const midId = useAccounts.getState().currentAccountId
+      const chrome = useChromeConfigStore.getState().contexts[midId] ?? { path: '', headless: false }
+      const setConnected = useViewerAccountsStore.getState().setConnected
+
+      for (const a of accounts) {
+        const rt = useViewerAccountsStore.getState().runtime[a.id]
+        if (rt?.isConnected === 'connected' || rt?.isConnected === 'connecting') continue
+        setConnected(a.id, 'connecting')
+      }
+
+      try {
+        const results = await window.ipcRenderer.invoke(
+          IPC_CHANNELS.tasks.viewerControl.autoReconnect,
+          {
+            chromePath: chrome.path || undefined,
+            headless: chrome.headless,
+            accounts,
+          },
+        )
+        if (cancelled || !Array.isArray(results)) return
+        for (const r of results) {
+          if (r.ok) {
+            setConnected(r.accountId, 'connected')
+          } else {
+            setConnected(r.accountId, 'disconnected')
+          }
+        }
+      } catch {
+        for (const a of accounts) {
+          const rt = useViewerAccountsStore.getState().runtime[a.id]
+          if (rt?.isConnected === 'connecting') {
+            setConnected(a.id, 'disconnected')
+          }
+        }
+      }
+    }
+
+    const tryRun = () => {
+      void run()
+    }
+
+    if (
+      useViewerAccountsStore.persist.hasHydrated() &&
+      useChromeConfigStore.persist.hasHydrated()
+    ) {
+      tryRun()
+    }
+    const unsubViewer = useViewerAccountsStore.persist.onFinishHydration(tryRun)
+    const unsubChrome = useChromeConfigStore.persist.onFinishHydration(tryRun)
+    const timer = window.setTimeout(tryRun, 800)
+
+    return () => {
+      cancelled = true
+      unsubViewer()
+      unsubChrome()
+      window.clearTimeout(timer)
+    }
+  }, [])
+}
+
 function App() {
   const { accounts, currentAccountId } = useAccounts()
 
@@ -158,6 +354,8 @@ function App() {
   }, [accounts, currentAccountId])
 
   useGlobalIpcListener()
+  useSyncLiveControlConnection()
+  useAutoReconnectViewerAccounts()
   useReplyTaskCommentListener()
   // useVoiceBroadcastPlayer()
 

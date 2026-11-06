@@ -10,7 +10,8 @@ export const URLS = {
 } as const
 
 export const REGEXPS = {
-  LOGIN_PAGE: /douyinec\.com/,
+  // 旧链路落到 douyinec；现网常见 buyin 自有登录页，二者都视为需登录
+  LOGIN_PAGE: /douyinec\.com|buyin\.jinritemai\.com\/mpa\/account\/login/,
 }
 
 export const SELECTORS = {

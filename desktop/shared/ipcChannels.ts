@@ -7,6 +7,8 @@ export const IPC_CHANNELS = {
       disconnectedEvent: 'tasks:liveControl:disconnectedEvent',
       /** 重连后已按意图自动恢复的任务类型列表 */
       tasksResumedEvent: 'tasks:liveControl:tasksResumedEvent',
+      /** 查询主进程当前仍保持中控会话的账号（渲染进程对齐连接态） */
+      listConnected: 'tasks:liveControl:listConnected',
     },
     autoMessage: {
       start: 'tasks:autoMessage:start',
@@ -14,6 +16,38 @@ export const IPC_CHANNELS = {
       stoppedEvent: 'tasks:autoMessage:stoppedEvent',
       updateConfig: 'tasks:autoMessage:updateConfig',
       sendBatchMessages: 'tasks:autoMessage:sendBatchMessages',
+    },
+    /** 真人小号：观众端登录 / 进房 */
+    viewerControl: {
+      connect: 'tasks:viewerControl:connect',
+      disconnect: 'tasks:viewerControl:disconnect',
+      disconnectedEvent: 'tasks:viewerControl:disconnectedEvent',
+      notifyAccountName: 'tasks:viewerControl:notifyAccountName',
+      /** 连接过程进度（等待扫码 / 等待进房） */
+      progressEvent: 'tasks:viewerControl:progressEvent',
+      /** 从已连接中控台解析本场观众端直播间链接 */
+      resolveRoomUrl: 'tasks:viewerControl:resolveRoomUrl',
+      /** 读取主进程已缓存的本场链接（优先于渲染进程本地状态） */
+      getCachedRoom: 'tasks:viewerControl:getCachedRoom',
+      /** 中控检测到开播并已自动缓存本场直播间 */
+      roomReadyEvent: 'tasks:viewerControl:roomReadyEvent',
+      /** 停播或中控断开后清除缓存的直播间 */
+      roomClearedEvent: 'tasks:viewerControl:roomClearedEvent',
+      /**
+       * 启动时后台恢复已保存登录态的互动号（无需打开小号互动页）。
+       * 无登录态或需重新扫码的号会跳过，不弹窗。
+       */
+      autoReconnect: 'tasks:viewerControl:autoReconnect',
+      /** 当前主进程已连接的互动号 */
+      listConnected: 'tasks:viewerControl:listConnected',
+    },
+    /** 真人小号：定时弹幕 */
+    viewerDanmaku: {
+      start: 'tasks:viewerDanmaku:start',
+      stop: 'tasks:viewerDanmaku:stop',
+      stoppedEvent: 'tasks:viewerDanmaku:stoppedEvent',
+      updateConfig: 'tasks:viewerDanmaku:updateConfig',
+      stopAll: 'tasks:viewerDanmaku:stopAll',
     },
     autoPopUp: {
       start: 'tasks:autoPopUp:start',

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { immer } from 'zustand/middleware/immer'
@@ -27,7 +27,7 @@ function defaultContext(): LiveControlContext {
   return {
     isConnected: 'disconnected',
     accountName: null,
-    platform: 'douyin',
+    platform: 'buyin',
   }
 }
 
@@ -37,6 +37,14 @@ export const useLiveControlStore = create<LiveControlStore>()(
       eventEmitter.on(EVENTS.ACCOUNT_REMOVED, (accountId: string) => {
         set(state => {
           delete state.contexts[accountId]
+        })
+      })
+
+      eventEmitter.on(EVENTS.ACCOUNT_ADDED, (accountId: string) => {
+        set(state => {
+          if (!state.contexts[accountId]) {
+            state.contexts[accountId] = defaultContext()
+          }
         })
       })
 
@@ -70,6 +78,7 @@ export const useLiveControlStore = create<LiveControlStore>()(
     }),
     {
       name: 'live-control-storage',
+      version: 2,
       partialize: state => {
         const contexts: Record<string, Pick<LiveControlContext, 'platform'>> = {}
         for (const key in state.contexts) {
@@ -77,15 +86,34 @@ export const useLiveControlStore = create<LiveControlStore>()(
         }
         return { contexts }
       },
-      merge: (_persistedState, currentState) => {
-        const persistedState = _persistedState as {
-          contexts: Record<string, Pick<LiveControlContext, 'platform'>>
+      migrate: (persistedState, version) => {
+        const state = persistedState as {
+          contexts?: Record<string, Partial<LiveControlContext>>
         }
-        const mergedContexts: Record<string, LiveControlContext> = {}
-        for (const key in persistedState.contexts ?? {}) {
+        // v2：运行时字段不再落盘；旧版可能残留 isConnected/accountName
+        if (version < 2) {
+          const contexts: Record<string, Pick<LiveControlContext, 'platform'>> = {}
+          for (const [key, ctx] of Object.entries(state.contexts ?? {})) {
+            contexts[key] = { platform: ctx.platform ?? 'buyin' }
+          }
+          return { contexts }
+        }
+        return persistedState as { contexts: Record<string, Pick<LiveControlContext, 'platform'>> }
+      },
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as {
+          contexts?: Record<string, Pick<LiveControlContext, 'platform'>>
+        }
+        // 合并进内存，勿整表替换，避免冲掉连接中的运行时状态
+        const mergedContexts: Record<string, LiveControlContext> = { ...currentState.contexts }
+        for (const [key, saved] of Object.entries(persisted?.contexts ?? {})) {
+          const existing = mergedContexts[key]
           mergedContexts[key] = {
-            ...defaultContext(),
-            ...persistedState.contexts[key],
+            ...(existing ?? defaultContext()),
+            platform: saved.platform ?? existing?.platform ?? 'buyin',
+            // 连接态与昵称仅运行时有效，永不从本地存储恢复
+            isConnected: existing?.isConnected ?? 'disconnected',
+            accountName: existing?.accountName ?? null,
           }
         }
         return {
@@ -120,8 +148,10 @@ export const useCurrentLiveControlActions = () => {
 
 export const useCurrentLiveControl = <T>(getter: (context: LiveControlContext) => T): T => {
   const currentAccountId = useAccounts(state => state.currentAccountId)
+  const defaultContextRef = useRef(defaultContext())
+  // 勿对原始值套 useShallow：嵌套字段变更时可能拿不到最新 isConnected
   return useLiveControlStore(state => {
-    const context = state.contexts[currentAccountId] ?? defaultContext()
+    const context = state.contexts[currentAccountId] ?? defaultContextRef.current
     return getter(context)
   })
 }

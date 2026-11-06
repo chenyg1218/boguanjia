@@ -19,6 +19,7 @@ import {
   toggleButton,
 } from '../helper'
 import type {
+  IAudienceRoomUrl,
   ICommentListener,
   ILiveEndedWatch,
   IPerformComment,
@@ -30,6 +31,8 @@ import { CompassListener, ControlListener } from './commentListener'
 import { REGEXPS, SELECTORS, TEXTS, URLS } from './constant'
 import { douyinElementFinder as elementFinder } from './element-finder'
 import { DouyinLiveEndedWatcher } from './liveEndedWatcher'
+import { ensureLivePreviewOn } from './livePreview'
+import { resolveDouyinAudienceRoom } from './resolveAudienceRoomUrl'
 
 const PLATFORM_NAME = '抖音小店' as const
 
@@ -43,13 +46,15 @@ export class DouyinPlatform
     IPerformComment,
     ICommentListener,
     ISendRedPacket,
-    ILiveEndedWatch
+    ILiveEndedWatch,
+    IAudienceRoomUrl
 {
   readonly _isPerformComment = true
   readonly _isPerformPopup = true
   readonly _isCommentListener = true
   readonly _isSendRedPacket = true
   readonly _isLiveEndedWatch = true
+  readonly _isAudienceRoomUrl = true
 
   public mainPage: Page | null = null
   private commentListener: ICommentListener | null = null
@@ -67,6 +72,7 @@ export class DouyinPlatform
       this.mainPage = page
       // 抖店直连进中控台时会出现两套相同 DOM，导致评论框/按钮定位失败；刷新一次恢复（对齐 oba #322）
       await page.reload({ waitUntil: 'load' })
+      await ensureLivePreviewOn(page)
     }
     return isConnected
   }
@@ -99,9 +105,24 @@ export class DouyinPlatform
     throw new Error('Method not implemented.')
   }
 
+  async resolveAudienceRoomUrl(
+    viewerPage?: Page | null,
+    known?: { roomId?: string; secUid?: string },
+  ) {
+    const page = this.mainPage
+    if (!page || page.isClosed()) {
+      throw new Error('中控台未就绪，请先连接中控台并确认已开播')
+    }
+    return resolveDouyinAudienceRoom(page, viewerPage, known)
+  }
+
   async performPopup(id: number, signal?: AbortSignal) {
     return Result.pipe(
       ensurePage(this.mainPage),
+      Result.andThen(async page => {
+        await ensureLivePreviewOn(page)
+        return Result.succeed(page)
+      }),
       Result.andThen(page => getItemFromVirtualScroller(page, elementFinder, id)),
       Result.andThen(item => elementFinder.getPopUpButtonFromGoodsItem(item)),
       Result.andThen(popupBtn =>

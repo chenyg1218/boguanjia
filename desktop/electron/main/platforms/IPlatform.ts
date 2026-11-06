@@ -90,6 +90,29 @@ export function isSendRedPacket(platform: IPlatform): platform is IPlatform & IS
   return '_isSendRedPacket' in platform && platform._isSendRedPacket === true
 }
 
+export type ResolvedAudienceRoomUrl = {
+  roomUrl: string
+  roomId?: string
+  secUid?: string
+}
+
+/** 从中控台解析观众端本场直播间链接（供小号互动自动进房） */
+export interface IAudienceRoomUrl {
+  _isAudienceRoomUrl: true
+  /**
+   * @param viewerPage 已登录互动号页面；用其通过 reflow 拿到真实 live.douyin.com 链接
+   * @param known L1 已检测到的 room_id；传入后跳过中控二次采集
+   */
+  resolveAudienceRoomUrl(
+    viewerPage?: Page | null,
+    known?: { roomId?: string; secUid?: string },
+  ): Promise<ResolvedAudienceRoomUrl>
+}
+
+export function isAudienceRoomUrl(platform: IPlatform): platform is IPlatform & IAudienceRoomUrl {
+  return '_isAudienceRoomUrl' in platform && platform._isAudienceRoomUrl === true
+}
+
 export interface IPlatform {
   get platformName(): string
   /** 连接到中控台，最终停留在中控台页面 */

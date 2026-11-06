@@ -15,6 +15,41 @@ import type { IElementFinder } from './IElementFinder'
 /** 判断是否已在中控台 / 是否跳到登录页的等待上限 */
 const CONNECT_PROBE_TIMEOUT_MS = 90_000
 
+/**
+ * SSO / 反爬跳转会中断当前导航，Playwright 常抛 net::ERR_ABORTED。
+ * 此时页面其实已在跳转链上，忽略后继续等最终落地页即可。
+ */
+async function softGoto(page: Page, url: string) {
+  try {
+    await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: CONNECT_PROBE_TIMEOUT_MS,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (/ERR_ABORTED|Navigation aborted|interrupted by another navigation/i.test(message)) {
+      return
+    }
+    throw err
+  }
+}
+
+async function describeConnectPage(page: Page) {
+  let url = ''
+  let title = ''
+  try {
+    url = page.url()
+  } catch {
+    url = '(无法读取地址)'
+  }
+  try {
+    title = (await page.title()).trim()
+  } catch {
+    title = ''
+  }
+  return title ? `${url}（${title}）` : url || '(空白页)'
+}
+
 export async function connect(
   page: Page,
   loginConstants: {
@@ -23,9 +58,7 @@ export async function connect(
     isInLiveControlSelector: string
   },
 ) {
-  await page.goto(loginConstants.liveControlUrl, {
-    waitUntil: 'domcontentloaded',
-  })
+  await softGoto(page, loginConstants.liveControlUrl)
   try {
     await Promise.race([
       page.waitForURL(loginConstants.loginUrlRegex, {
@@ -39,8 +72,9 @@ export async function connect(
       }),
     ])
   } catch {
+    const where = await describeConnectPage(page)
     throw new Error(
-      '打开中控台超时：页面未进入登录页或直播控制台。请检查网络，或关闭无头模式后重试',
+      `打开中控台超时：当前页面未识别为登录页或直播控制台 → ${where}。请确认平台选择正确、网络正常；若为白屏/验证码/异常页，可在设置中清除该账号登录状态后重试`,
     )
   }
 

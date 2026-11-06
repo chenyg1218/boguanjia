@@ -3,6 +3,7 @@ import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { createLogger } from '#/logger'
 import { accountManager } from '#/managers/AccountManager'
 import { assertAccountLicensed } from '#/services/licenseGate'
+import { telemetryService } from '#/services/TelemetryService'
 import { toTaskResult, typedIpcMainHandle } from '#/utils'
 
 const TASK_NAME = '自动回复'
@@ -20,7 +21,12 @@ function setupIpcHandlers() {
         assertAccountLicensed(accountId),
         Result.andThen(() => accountManager.getSession(accountId)),
         Result.andThen(accountSession =>
-          accountSession.startTask({ type: TASK_TYPE, config: config }),
+          Result.pipe(
+            accountSession.startTask({ type: TASK_TYPE, config }),
+            Result.inspect(() => {
+              telemetryService.trackTaskStart(TASK_TYPE, accountSession.livePlatform)
+            }),
+          ),
         ),
         Result.inspectError(error => {
           accountLogger(accountId).error('启动评论监听失败：', error)

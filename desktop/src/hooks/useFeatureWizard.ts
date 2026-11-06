@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export type FeatureWizardId = 'auto-message' | 'auto-popup' | 'auto-reply'
+export type FeatureWizardId = 'auto-message' | 'auto-popup' | 'auto-reply' | 'viewer-danmaku'
 
 export type WizardStepStatus = 'pending' | 'done' | 'skipped'
 
@@ -49,6 +49,7 @@ export const useFeatureWizardStore = create<FeatureWizardState>()(
         'auto-message': false,
         'auto-popup': false,
         'auto-reply': false,
+        'viewer-danmaku': false,
       },
       runtimes: {},
       openWizard: (id, stepCount) => {

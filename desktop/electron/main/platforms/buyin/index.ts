@@ -7,6 +7,7 @@ import { CompassListener, ControlListener } from '../douyin/commentListener'
 // 百应和抖店共用
 import { connect, ensurePage, openUrlByElement } from '../helper'
 import type {
+  IAudienceRoomUrl,
   ICommentListener,
   ILiveEndedWatch,
   IPerformComment,
@@ -14,6 +15,8 @@ import type {
   IPlatform,
   ISendRedPacket,
 } from '../IPlatform'
+import { ensureLivePreviewOn } from '../douyin/livePreview'
+import { resolveDouyinAudienceRoom } from '../douyin/resolveAudienceRoomUrl'
 import { REGEXPS, SELECTORS, URLS } from './constant'
 
 const PLATFORM_NAME = '巨量百应' as const
@@ -28,13 +31,15 @@ export class BuyinPlatform
     IPerformComment,
     ICommentListener,
     ISendRedPacket,
-    ILiveEndedWatch
+    ILiveEndedWatch,
+    IAudienceRoomUrl
 {
   readonly _isSendRedPacket = true
   readonly _isPerformComment = true
   readonly _isPerformPopup = true
   readonly _isCommentListener = true
   readonly _isLiveEndedWatch = true
+  readonly _isAudienceRoomUrl = true
 
   private mainPage: Page | null = null
   private commentListener: ICommentListener | null = null
@@ -57,6 +62,7 @@ export class BuyinPlatform
       browserSession.page = newPage
       this.mainPage = newPage
       await page.close()
+      await ensureLivePreviewOn(newPage)
     }
     return isConnected
   }
@@ -88,6 +94,17 @@ export class BuyinPlatform
 
   disconnect(): Promise<void> {
     throw new Error('Method not implemented.')
+  }
+
+  async resolveAudienceRoomUrl(
+    viewerPage?: Page | null,
+    known?: { roomId?: string; secUid?: string },
+  ) {
+    const page = this.mainPage
+    if (!page || page.isClosed()) {
+      throw new Error('中控台未就绪，请先连接中控台并确认已开播')
+    }
+    return resolveDouyinAudienceRoom(page, viewerPage, known)
   }
 
   async performPopup(...args: Parameters<IPerformPopup['performPopup']>) {

@@ -11,7 +11,9 @@ import windowManager from './windowManager'
 import './ipc'
 import { createLogger } from './logger'
 import { accountManager } from './managers/AccountManager'
+import { viewerAccountManager } from './managers/ViewerAccountManager'
 import { licenseService } from './services/LicenseService'
+import { telemetryService } from './services/TelemetryService'
 
 // const _require = createRequire(import.meta.url)
 
@@ -157,13 +159,19 @@ app
       })
     })
   })
+  .then(() => {
+    telemetryService.trackAppLaunch()
+    void telemetryService.flush()
+  })
   .then(() => providerService.initialize())
   .then(createWindow)
 
 app.on('window-all-closed', async () => {
   win = null
   licenseService.stopRuntimeWatch()
+  await telemetryService.flush().catch(() => {})
   accountManager.cleanup()
+  viewerAccountManager.cleanup()
   if (process.platform !== 'darwin') app.quit()
 })
 

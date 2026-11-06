@@ -27,6 +27,8 @@
 - 核销：`https://license.sugaiming.com/bgj/redeem`
 - 心跳：`https://license.sugaiming.com/bgj/validate`
 - 平台绑定：`https://license.sugaiming.com/bgj/bind-platform`
+- 埋点：`https://license.sugaiming.com/bgj/telemetry`
+- 运营看板：`https://license.sugaiming.com/bgj/admin/`（需 `BGJ_ADMIN_PASSWORD`）
 - 源站：本机 `127.0.0.1:8081`（nginx `/bgj/` 反代；金豆仍为 `/` → `:8080`）
 - 数据：`/opt/boguanjia-license/data/cards.db`（**与金豆库分离**）
 - 服务：`systemctl status boguanjia-license nginx`
@@ -43,7 +45,9 @@
 JINDOU_SIGNING_SEED=<32字节hex，与客户端公钥配对>
 JINDOU_API_KEY=<与客户端 license_crypto.API_REQUEST_KEY_HEX 一致>
 JINDOU_SESSION_GRACE_DAYS=2
+BGJ_ADMIN_PASSWORD=<播管家运营看板登录密码>
 ```
+
 
 本地生成见 `deploy/aliyun/secrets.env.local`（已 gitignore）。部署后可自动上传；或：
 
@@ -87,6 +91,28 @@ sudo systemctl restart boguanjia-license
 
 首次绑定写入服务端；同平台重放 `replay: true`；换绑 `409` 并带回已绑定平台。  
 尚无卡密记录的机器会创建占位行（到期为占位时间）；`/validate` 对此返回 `known: false` 但仍带回 `bound_platform`，避免基础版误报「授权已过期」。
+
+### POST /telemetry
+
+桌面端运营埋点（HMAC 同核销）。事件名白名单：`app_launch` / `platform_selected` / `connect` / `task_start`。
+
+```json
+{
+  "machine_id": "32位本机指纹",
+  "events": [
+    { "name": "app_launch", "props": { "app_version": "1.1.4", "plan": "pro" } },
+    { "name": "connect", "props": { "platform": "douyin", "result": "ok" } }
+  ]
+}
+```
+
+`props` 仅允许：`platform` / `result` / `reason` / `task_type` / `app_version` / `plan`。  
+事件保留约 90 天。
+
+### GET /admin/
+
+简易运营看板（概览 / 平台与连接 / 功能使用）。  
+`POST /admin/login` 用管理密码换 token；随后请求 `GET /admin/api/stats?day=YYYY-MM-DD&days=30` 需带请求头 `X-Admin-Token`。
 
 ## HTTPS
 

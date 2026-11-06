@@ -26,12 +26,16 @@ export interface IpcChannels {
           accountId: string
           accountName: string | null
         }
-      | { ok: false },
+      | { ok: false; accountId: string },
   ) => void
   [IPC_CHANNELS.tasks.liveControl.tasksResumedEvent]: (payload: {
     accountId: string
     tasks: import('./session').ResumableTaskType[]
   }) => void
+  [IPC_CHANNELS.tasks.liveControl.listConnected]: () => Array<{
+    accountId: string
+    accountName: string
+  }>
   [IPC_CHANNELS.tasks.autoMessage.start]: (
     accountId: string,
     config: AutoCommentConfig,
@@ -49,6 +53,84 @@ export interface IpcChannels {
   [IPC_CHANNELS.tasks.autoMessage.updateConfig]: (
     accountId: string,
     config: Parital<AutoCommentConfig>,
+  ) => void
+
+  // ViewerControl（真人小号）
+  [IPC_CHANNELS.tasks.viewerControl.connect]: (params: {
+    chromePath?: string
+    headless?: boolean
+    account: ViewerAccount
+    /** 可选：预填观众端直播间链接（一般由开始任务时从中控同步） */
+    roomUrl?: string
+    /** 仅恢复已有登录态；需扫码时失败且不弹窗 */
+    restoreOnly?: boolean
+  }) => { ok: true } | { ok: false; error: string }
+  [IPC_CHANNELS.tasks.viewerControl.autoReconnect]: (params: {
+    chromePath?: string
+    headless?: boolean
+    accounts: ViewerAccount[]
+  }) => Array<{ accountId: string; ok: boolean; skipped?: boolean }>
+  [IPC_CHANNELS.tasks.viewerControl.listConnected]: () => Array<{
+    accountId: string
+    accountName: string
+  }>
+  [IPC_CHANNELS.tasks.viewerControl.disconnect]: (accountId: string) => TaskIpcResult
+  [IPC_CHANNELS.tasks.viewerControl.disconnectedEvent]: (payload: {
+    accountId: string
+    reason: import('./session').DisconnectReason
+  }) => void
+  [IPC_CHANNELS.tasks.viewerControl.notifyAccountName]: (
+    params:
+      | {
+          ok: true
+          accountId: string
+          accountName: string | null
+        }
+      | { ok: false },
+  ) => void
+  [IPC_CHANNELS.tasks.viewerControl.progressEvent]: (payload: {
+    accountId: string
+    phase: 'waiting_login' | 'waiting_room'
+    message: string
+  }) => void
+  /** 从中控台同步本场观众端直播间（互动号协助 reflow 解析真实链接） */
+  [IPC_CHANNELS.tasks.viewerControl.resolveRoomUrl]: (
+    midAccountId: string,
+    viewerAccountId?: string,
+  ) =>
+    | { ok: true; roomUrl: string; roomId?: string; secUid?: string }
+    | { ok: false; error: string }
+  /** 读取主进程本场缓存（开始任务以此为准，避免本地过期 roomId） */
+  [IPC_CHANNELS.tasks.viewerControl.getCachedRoom]: () =>
+    | { ok: true; roomUrl: string; roomId?: string; secUid?: string; midAccountId: string }
+    | { ok: false }
+  /** 中控开播后自动缓存本场直播间（渲染进程更新 roomUrl） */
+  [IPC_CHANNELS.tasks.viewerControl.roomReadyEvent]: (payload: {
+    midAccountId: string
+    roomUrl: string
+    roomId?: string
+    secUid?: string
+  }) => void
+  /** 停播或中控断开后清除缓存 */
+  [IPC_CHANNELS.tasks.viewerControl.roomClearedEvent]: (payload: {
+    midAccountId: string
+  }) => void
+
+  // ViewerDanmaku
+  [IPC_CHANNELS.tasks.viewerDanmaku.start]: (
+    accountId: string,
+    config: ViewerDanmakuConfig,
+    options?: { roomUrl?: string; roomId?: string; secUid?: string },
+  ) => TaskIpcResult
+  [IPC_CHANNELS.tasks.viewerDanmaku.stop]: (accountId: string) => boolean
+  [IPC_CHANNELS.tasks.viewerDanmaku.stopAll]: () => boolean
+  [IPC_CHANNELS.tasks.viewerDanmaku.stoppedEvent]: (payload: {
+    accountId: string
+    reason: string
+  }) => void
+  [IPC_CHANNELS.tasks.viewerDanmaku.updateConfig]: (
+    accountId: string,
+    config: Partial<ViewerDanmakuConfig>,
   ) => void
 
   // AutoPopup

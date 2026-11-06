@@ -14,6 +14,16 @@ export function maxAccountsForPlan(plan: LicensePlan): number {
   return 1
 }
 
+/**
+ * 真人小号（观众互动号）上限；与中控账号分池。
+ * 旗舰也有硬顶（不为 -1），避免资源与风控敞口。
+ */
+export function maxViewerAccountsForPlan(plan: LicensePlan): number {
+  if (plan === 'flagship') return 30
+  if (plan === 'pro') return 10
+  return 1
+}
+
 export function normalizeLicensePlan(raw: unknown, fallback: LicensePlan = 'flagship'): LicensePlan {
   const v = String(raw || '')
     .trim()

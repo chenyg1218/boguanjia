@@ -93,7 +93,14 @@ def run(client: paramiko.SSHClient, cmd: str, check: bool = True) -> str:
 
 def make_archive(service_file: str) -> bytes:
     buf = io.BytesIO()
-    names = ("app.py", "schema.sql", "import_cards.py", "license_crypto.py", service_file)
+    names = (
+        "app.py",
+        "schema.sql",
+        "import_cards.py",
+        "license_crypto.py",
+        "admin_dashboard.html",
+        service_file,
+    )
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         for name in names:
             path = ROOT / name
@@ -120,16 +127,29 @@ def main() -> int:
             f.write(make_archive(service_file))
         secrets_local = ROOT / "secrets.env.local"
         if secrets_local.is_file():
-            lines = []
+            merged: dict[str, str] = {}
+            # 保留服务器上已有、本地未提供的键（例如已手写的 BGJ_ADMIN_PASSWORD）
+            try:
+                with sftp.file(f"{opt}/secrets.env", "r") as rf:
+                    remote_text = rf.read().decode("utf-8", errors="replace")
+                for line in remote_text.splitlines():
+                    s = line.strip()
+                    if not s or s.startswith("#") or "=" not in s:
+                        continue
+                    k, v = s.split("=", 1)
+                    merged[k.strip()] = v
+            except OSError:
+                pass
             for line in secrets_local.read_text(encoding="utf-8").splitlines():
                 s = line.strip()
-                if not s or s.startswith("#"):
+                if not s or s.startswith("#") or "=" not in s:
                     continue
-                lines.append(s)
-            body = ("\n".join(lines) + "\n").encode("utf-8")
+                k, v = s.split("=", 1)
+                merged[k.strip()] = v
+            body = ("\n".join(f"{k}={v}" for k, v in merged.items()) + "\n").encode("utf-8")
             with sftp.file(f"{opt}/secrets.env", "wb") as f:
                 f.write(body)
-            print(f"Uploaded {opt}/secrets.env")
+            print(f"Uploaded {opt}/secrets.env (merged, {len(merged)} keys)")
         else:
             print("WARN: secrets.env.local missing — skip secrets upload")
         sftp.close()
@@ -138,7 +158,7 @@ def main() -> int:
         run(
             client,
             f"cd {tmp} && tar xzf bundle.tgz && "
-            f"cp -f app.py schema.sql import_cards.py license_crypto.py {opt}/ && "
+            f"cp -f app.py schema.sql import_cards.py license_crypto.py admin_dashboard.html {opt}/ && "
             f"cp -f {service_file} /etc/systemd/system/{unit}.service",
         )
         run(client, "python3 -m pip install -q 'PyNaCl>=1.5.0' || pip3 install -q 'PyNaCl>=1.5.0'", check=False)

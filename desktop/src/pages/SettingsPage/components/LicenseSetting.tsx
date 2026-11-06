@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { formatMaxAccounts, planDisplayName } from 'shared/licensePlan'
 import { platformDisplayName } from 'shared/platforms'
 import { PRICING_PLANS, SHARED_FEATURES } from '@/constants/pricing'
+import { maxViewerAccountsForPlan } from 'shared/licensePlan'
 import { useLicense } from '@/hooks/useLicense'
 import { useToast } from '@/hooks/useToast'
 import { Button } from '../../../components/ui/button'
@@ -68,6 +69,12 @@ export function LicenseSetting() {
             <span className="font-medium">{formatMaxAccounts(status.maxAccounts)}</span>
           </div>
           <div className="flex justify-between gap-4">
+            <span className="text-muted-foreground">互动号上限</span>
+            <span className="font-medium">
+              {formatMaxAccounts(maxViewerAccountsForPlan(status.plan))}
+            </span>
+          </div>
+          <div className="flex justify-between gap-4">
             <span className="text-muted-foreground">平台绑定</span>
             <span className="font-medium">
               {!status.platformLocked
@@ -106,9 +113,15 @@ export function LicenseSetting() {
 
                 <p className="text-xl font-semibold tracking-tight">{plan.price}</p>
 
-                <div className="text-sm">
-                  <span className="text-muted-foreground">直播账号数量：</span>
-                  <span className="font-semibold text-orange-500">{plan.accountLimit}</span>
+                <div className="text-sm space-y-1">
+                  <div>
+                    <span className="text-muted-foreground">直播账号：</span>
+                    <span className="font-semibold text-orange-500">{plan.accountLimit}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">互动号：</span>
+                    <span className="font-semibold text-orange-500">{plan.viewerLimit}</span>
+                  </div>
                 </div>
 
                 <ul className="space-y-2.5">

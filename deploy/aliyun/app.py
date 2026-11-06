@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Jindou license API: POST /redeem, /validate, /bind-platform; responses include server_time."""
+"""Jindou/Boguanjia license API: redeem/validate/bind-platform/telemetry + /admin dashboard."""
 
 import json
 import os
@@ -20,7 +20,7 @@ except ImportError:
         daemon_threads = True
 
 from http.server import BaseHTTPRequestHandler
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 DB_PATH = os.environ.get("JINDOU_DB", "/opt/jindou-license/data/cards.db")
 HOST = os.environ.get("JINDOU_HOST", "0.0.0.0")
@@ -30,12 +30,24 @@ RATE_MAX = 30
 MAX_BODY_BYTES = 65536
 SIGNING_SEED = os.environ.get("JINDOU_SIGNING_SEED", "").strip()
 API_KEY = os.environ.get("JINDOU_API_KEY", "").strip()
+# 播管家优先 BGJ_ADMIN_PASSWORD；兼容共用进程时的 JINDOU_ADMIN_PASSWORD
+ADMIN_PASSWORD = (
+    os.environ.get("BGJ_ADMIN_PASSWORD") or os.environ.get("JINDOU_ADMIN_PASSWORD") or ""
+).strip()
 try:
     SESSION_GRACE_DAYS = max(1, min(30, int(os.environ.get("JINDOU_SESSION_GRACE_DAYS", "2"))))
 except ValueError:
     SESSION_GRACE_DAYS = 2
 _MACHINE_ID_RE = re.compile(r"^[a-fA-F0-9]{16,64}$")
 _TIME_FMT = "%Y-%m-%d %H:%M:%S"
+_ALLOWED_EVENT_NAMES = frozenset(
+    {"app_launch", "platform_selected", "connect", "task_start"}
+)
+_ALLOWED_PROP_KEYS = frozenset(
+    {"platform", "result", "reason", "task_type", "app_version", "plan"}
+)
+_EVENT_RETENTION_DAYS = 90
+_MAX_EVENTS_PER_REQUEST = 20
 # 与桌面端 shared/platforms.ts 对齐（基础/专业版单平台锁定）
 _ALLOWED_PLATFORMS = frozenset(
     {
@@ -213,6 +225,21 @@ def _migrate(conn):
         conn.execute(
             "ALTER TABLE machines ADD COLUMN bound_platform TEXT NOT NULL DEFAULT ''"
         )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS events ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "machine_id TEXT NOT NULL,"
+        "name TEXT NOT NULL,"
+        "props TEXT NOT NULL DEFAULT '{}',"
+        "created_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_events_day_name ON events(created_at, name)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_events_machine_day ON events(machine_id, created_at)"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_name ON events(name)")
 
 
 def init_db():
@@ -612,8 +639,453 @@ def bind_platform(machine_id="", platform=""):
             conn.close()
 
 
+def _sanitize_event_props(raw):
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for key, value in raw.items():
+        if key not in _ALLOWED_PROP_KEYS:
+            continue
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            if abs(value) > 1e12:
+                continue
+            out[key] = value
+            continue
+        if isinstance(value, str):
+            text = value.strip()
+            if key == "platform":
+                text = _normalize_platform(text)
+                if not text:
+                    continue
+            elif key == "result":
+                text = text.lower()
+                if text not in ("ok", "fail"):
+                    continue
+            elif key == "plan":
+                text = text.lower()
+                if text not in ("free", "pro", "flagship"):
+                    continue
+            elif key == "reason":
+                text = text[:80]
+            elif key == "task_type":
+                text = re.sub(r"[^a-zA-Z0-9_\-]", "", text)[:40]
+            elif key == "app_version":
+                text = re.sub(r"[^0-9A-Za-z.\-+_]", "", text)[:32]
+            if text:
+                out[key] = text
+    return out
+
+
+def _parse_day_start(day_text):
+    raw = (day_text or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw[:10], "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _day_bounds(day_dt):
+    start = day_dt.strftime("%Y-%m-%dT00:00:00Z")
+    end = (day_dt + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+    return start, end
+
+
+def _cleanup_old_events(conn):
+    cutoff = (_now_utc() - timedelta(days=_EVENT_RETENTION_DAYS)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    conn.execute("DELETE FROM events WHERE created_at < ?", (cutoff,))
+
+
+def ingest_telemetry(machine_id="", events=None):
+    """写入匿名运营事件；props 仅允许白名单字段。"""
+    mid = _normalize_machine_id(machine_id)
+    if not mid:
+        return 400, _payload_base(ok=False, error="缺少本机标识")
+    if not isinstance(events, list) or not events:
+        return 400, _payload_base(ok=False, error="缺少事件列表")
+    if len(events) > _MAX_EVENTS_PER_REQUEST:
+        return 400, _payload_base(ok=False, error="单次事件过多")
+
+    rows = []
+    now = _now_iso()
+    for item in events:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if name not in _ALLOWED_EVENT_NAMES:
+            continue
+        props = _sanitize_event_props(item.get("props"))
+        created = now
+        raw_ts = str(item.get("created_at") or "").strip()
+        if raw_ts:
+            parsed = _parse_expires(raw_ts)
+            if parsed is not None:
+                # 仅接受近 48 小时内的客户端时间，防乱写历史
+                skew = abs((_now_utc() - parsed).total_seconds())
+                if skew <= 48 * 3600:
+                    created = parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+        rows.append((mid, name, json.dumps(props, ensure_ascii=True, separators=(",", ":")), created))
+
+    if not rows:
+        return 400, _payload_base(ok=False, error="无有效事件")
+
+    with _db_lock:
+        conn = _connect()
+        try:
+            _migrate(conn)
+            conn.executemany(
+                "INSERT INTO events (machine_id, name, props, created_at) VALUES (?, ?, ?, ?)",
+                rows,
+            )
+            # 约每 50 次写入做一次清理，避免每次 DELETE
+            if (int(time.time()) % 50) == 0:
+                _cleanup_old_events(conn)
+            conn.commit()
+            return 200, _payload_base(ok=True, accepted=len(rows))
+        finally:
+            conn.close()
+
+
+def _admin_token_expected():
+    if not ADMIN_PASSWORD:
+        return ""
+    import hashlib
+    import hmac as hmac_mod
+
+    return hmac_mod.new(
+        ADMIN_PASSWORD.encode("utf-8"),
+        b"boguanjia-admin-session-v1",
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def admin_login(password=""):
+    if not ADMIN_PASSWORD:
+        return 503, {"ok": False, "error": "看板未启用：请配置 BGJ_ADMIN_PASSWORD"}
+    import hmac as hmac_mod
+
+    if not hmac_mod.compare_digest(str(password or ""), ADMIN_PASSWORD):
+        return 401, {"ok": False, "error": "密码错误"}
+    return 200, {"ok": True, "token": _admin_token_expected()}
+
+
+def _prop(field):
+    return "json_extract(props, '$.%s')" % field
+
+
+def admin_stats(day="", days=7, platform="", plan=""):
+    """聚合看板数据：概览 / 趋势 / 平台 / 任务 / 机器明细。"""
+    day_dt = _parse_day_start(day) or _now_utc().replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    try:
+        days_n = max(1, min(90, int(days)))
+    except (TypeError, ValueError):
+        days_n = 7
+
+    plat_filter = _normalize_platform(platform)
+    plan_filter = (plan or "").strip().lower()
+    if plan_filter not in ("free", "pro", "flagship", ""):
+        plan_filter = ""
+
+    start, end = _day_bounds(day_dt)
+    trend_start_dt = day_dt - timedelta(days=days_n - 1)
+    trend_start = trend_start_dt.strftime("%Y-%m-%dT00:00:00Z")
+
+    where = ["created_at >= ?", "created_at < ?"]
+    args = [start, end]
+    if plat_filter:
+        where.append("%s = ?" % _prop("platform"))
+        args.append(plat_filter)
+
+    where_sql = " AND ".join(where)
+
+    with _db_lock:
+        conn = _connect()
+        try:
+            _migrate(conn)
+
+            def _count(name=None, extra="", extra_args=None):
+                sql = "SELECT COUNT(*) AS c FROM events WHERE " + where_sql
+                a = list(args)
+                if name:
+                    sql += " AND name = ?"
+                    a.append(name)
+                if extra:
+                    sql += " " + extra
+                    a.extend(extra_args or [])
+                row = conn.execute(sql, a).fetchone()
+                return int(row["c"] if row else 0)
+
+            launches = _count("app_launch")
+            dau = conn.execute(
+                "SELECT COUNT(DISTINCT machine_id) AS c FROM events WHERE "
+                + where_sql
+                + " AND name = 'app_launch'",
+                args,
+            ).fetchone()
+            dau_n = int(dau["c"] if dau else 0)
+
+            task_starts = _count("task_start")
+            task_machines = conn.execute(
+                "SELECT COUNT(DISTINCT machine_id) AS c FROM events WHERE "
+                + where_sql
+                + " AND name = 'task_start'",
+                args,
+            ).fetchone()
+            task_machines_n = int(task_machines["c"] if task_machines else 0)
+            avg_tasks = (
+                round(float(task_starts) / float(task_machines_n), 2)
+                if task_machines_n
+                else 0.0
+            )
+
+            connect_ok = _count(
+                "connect",
+                "AND %s = 'ok'" % _prop("result"),
+            )
+            connect_total = _count("connect")
+            connect_rate = (
+                round(100.0 * float(connect_ok) / float(connect_total), 1)
+                if connect_total
+                else 0.0
+            )
+
+            machines_ok_once = conn.execute(
+                "SELECT COUNT(DISTINCT machine_id) AS c FROM events WHERE "
+                + where_sql
+                + " AND name = 'connect' AND %s = 'ok'" % _prop("result"),
+                args,
+            ).fetchone()
+            machines_tried = conn.execute(
+                "SELECT COUNT(DISTINCT machine_id) AS c FROM events WHERE "
+                + where_sql
+                + " AND name = 'connect'",
+                args,
+            ).fetchone()
+            machines_ok_n = int(machines_ok_once["c"] if machines_ok_once else 0)
+            machines_tried_n = int(machines_tried["c"] if machines_tried else 0)
+            machine_connect_rate = (
+                round(100.0 * float(machines_ok_n) / float(machines_tried_n), 1)
+                if machines_tried_n
+                else 0.0
+            )
+
+            now_iso = _now_iso()
+            licensed = conn.execute(
+                "SELECT COUNT(*) AS c FROM machines WHERE revoked = 0 "
+                "AND expires_at > ? AND expires_at != ?",
+                (now_iso, _PLATFORM_STUB_EXPIRES),
+            ).fetchone()
+            licensed_n = int(licensed["c"] if licensed else 0)
+
+            # 趋势
+            trend = []
+            for i in range(days_n):
+                d = trend_start_dt + timedelta(days=i)
+                ds, de = _day_bounds(d)
+                t_args = [ds, de]
+                t_where = "created_at >= ? AND created_at < ?"
+                if plat_filter:
+                    t_where += " AND %s = ?" % _prop("platform")
+                    t_args.append(plat_filter)
+                row = conn.execute(
+                    "SELECT "
+                    "COUNT(DISTINCT CASE WHEN name='app_launch' THEN machine_id END) AS dau,"
+                    "SUM(CASE WHEN name='app_launch' THEN 1 ELSE 0 END) AS launches,"
+                    "SUM(CASE WHEN name='task_start' THEN 1 ELSE 0 END) AS tasks,"
+                    "SUM(CASE WHEN name='connect' AND %s='ok' THEN 1 ELSE 0 END) AS cok,"
+                    "SUM(CASE WHEN name='connect' THEN 1 ELSE 0 END) AS ctotal "
+                    "FROM events WHERE %s" % (_prop("result"), t_where),
+                    t_args,
+                ).fetchone()
+                ctotal = int(row["ctotal"] or 0)
+                cok = int(row["cok"] or 0)
+                trend.append(
+                    {
+                        "day": d.strftime("%Y-%m-%d"),
+                        "dau": int(row["dau"] or 0),
+                        "launches": int(row["launches"] or 0),
+                        "tasks": int(row["tasks"] or 0),
+                        "connect_rate": (
+                            round(100.0 * float(cok) / float(ctotal), 1) if ctotal else 0.0
+                        ),
+                    }
+                )
+
+            # 平台分布
+            platforms = []
+            for row in conn.execute(
+                "SELECT %s AS platform,"
+                "SUM(CASE WHEN name='platform_selected' THEN 1 ELSE 0 END) AS selected,"
+                "SUM(CASE WHEN name='connect' THEN 1 ELSE 0 END) AS attempts,"
+                "SUM(CASE WHEN name='connect' AND %s='ok' THEN 1 ELSE 0 END) AS ok,"
+                "SUM(CASE WHEN name='connect' AND %s='fail' THEN 1 ELSE 0 END) AS fail "
+                "FROM events WHERE %s AND %s IS NOT NULL AND %s != '' "
+                "GROUP BY 1 ORDER BY attempts DESC, selected DESC"
+                % (
+                    _prop("platform"),
+                    _prop("result"),
+                    _prop("result"),
+                    where_sql,
+                    _prop("platform"),
+                    _prop("platform"),
+                ),
+                args,
+            ):
+                attempts = int(row["attempts"] or 0)
+                ok_n = int(row["ok"] or 0)
+                platforms.append(
+                    {
+                        "platform": row["platform"] or "",
+                        "selected": int(row["selected"] or 0),
+                        "attempts": attempts,
+                        "ok": ok_n,
+                        "fail": int(row["fail"] or 0),
+                        "success_rate": (
+                            round(100.0 * float(ok_n) / float(attempts), 1)
+                            if attempts
+                            else 0.0
+                        ),
+                    }
+                )
+
+            # 失败原因 Top
+            fail_reasons = []
+            for row in conn.execute(
+                "SELECT %s AS reason, COUNT(*) AS c FROM events WHERE %s "
+                "AND name='connect' AND %s='fail' AND %s IS NOT NULL AND %s != '' "
+                "GROUP BY 1 ORDER BY c DESC LIMIT 10"
+                % (
+                    _prop("reason"),
+                    where_sql,
+                    _prop("result"),
+                    _prop("reason"),
+                    _prop("reason"),
+                ),
+                args,
+            ):
+                fail_reasons.append({"reason": row["reason"] or "", "count": int(row["c"])})
+
+            # 任务分布
+            tasks = []
+            for row in conn.execute(
+                "SELECT %s AS task_type, COUNT(*) AS starts, "
+                "COUNT(DISTINCT machine_id) AS machines "
+                "FROM events WHERE %s AND name='task_start' "
+                "AND %s IS NOT NULL AND %s != '' "
+                "GROUP BY 1 ORDER BY starts DESC"
+                % (_prop("task_type"), where_sql, _prop("task_type"), _prop("task_type")),
+                args,
+            ):
+                starts = int(row["starts"] or 0)
+                machines_n = int(row["machines"] or 0)
+                tasks.append(
+                    {
+                        "task_type": row["task_type"] or "",
+                        "starts": starts,
+                        "machines": machines_n,
+                        "avg_per_machine": (
+                            round(float(starts) / float(machines_n), 2) if machines_n else 0.0
+                        ),
+                    }
+                )
+
+            # 机器明细（短哈希）
+            machine_sql = (
+                "SELECT e.machine_id AS mid,"
+                "SUM(CASE WHEN e.name='app_launch' THEN 1 ELSE 0 END) AS launches,"
+                "SUM(CASE WHEN e.name='task_start' THEN 1 ELSE 0 END) AS tasks,"
+                "MAX(CASE WHEN e.name='connect' AND "
+                "json_extract(e.props, '$.result')='ok' THEN 1 ELSE 0 END) AS connected,"
+                "MAX(json_extract(e.props, '$.platform')) AS platform,"
+                "COALESCE(m.plan, '') AS plan,"
+                "COALESCE(m.bound_platform, '') AS bound_platform "
+                "FROM events e LEFT JOIN machines m ON m.machine_id = e.machine_id "
+                "WHERE e.created_at >= ? AND e.created_at < ?"
+            )
+            m_args = [start, end]
+            if plat_filter:
+                machine_sql += " AND json_extract(e.props, '$.platform') = ?"
+                m_args.append(plat_filter)
+            if plan_filter:
+                machine_sql += " AND COALESCE(m.plan, '') = ?"
+                m_args.append(plan_filter)
+            machine_sql += " GROUP BY e.machine_id ORDER BY launches DESC, tasks DESC LIMIT 200"
+
+            machines = []
+            for row in conn.execute(machine_sql, m_args):
+                mid = row["mid"] or ""
+                machines.append(
+                    {
+                        "machine": (mid[:8] if mid else ""),
+                        "launches": int(row["launches"] or 0),
+                        "tasks": int(row["tasks"] or 0),
+                        "connected": bool(row["connected"]),
+                        "platform": row["platform"] or row["bound_platform"] or "",
+                        "plan": _normalize_plan(row["plan"]) if row["plan"] else "",
+                    }
+                )
+
+            # 版本分布
+            versions = []
+            for row in conn.execute(
+                "SELECT %s AS app_version, COUNT(DISTINCT machine_id) AS machines "
+                "FROM events WHERE %s AND %s IS NOT NULL AND %s != '' "
+                "GROUP BY 1 ORDER BY machines DESC LIMIT 20"
+                % (
+                    _prop("app_version"),
+                    where_sql,
+                    _prop("app_version"),
+                    _prop("app_version"),
+                ),
+                args,
+            ):
+                versions.append(
+                    {
+                        "app_version": row["app_version"] or "",
+                        "machines": int(row["machines"] or 0),
+                    }
+                )
+
+            return 200, {
+                "ok": True,
+                "day": day_dt.strftime("%Y-%m-%d"),
+                "days": days_n,
+                "overview": {
+                    "dau": dau_n,
+                    "launches": launches,
+                    "task_starts": task_starts,
+                    "task_machines": task_machines_n,
+                    "avg_tasks_per_machine": avg_tasks,
+                    "connect_ok": connect_ok,
+                    "connect_total": connect_total,
+                    "connect_rate": connect_rate,
+                    "machine_connect_rate": machine_connect_rate,
+                    "licensed_machines": licensed_n,
+                },
+                "trend": trend,
+                "platforms": platforms,
+                "fail_reasons": fail_reasons,
+                "tasks": tasks,
+                "machines": machines,
+                "versions": versions,
+            }
+        finally:
+            conn.close()
+
+
+def _admin_html_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin_dashboard.html")
+
+
 class Handler(BaseHTTPRequestHandler):
-    server_version = "JindouLicense/1.4"
+    server_version = "JindouLicense/1.5"
 
     def log_message(self, fmt, *args):
         print("[%s] %s" % (self.log_date_time_string(), fmt % args))
@@ -662,9 +1134,42 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return payload
 
+    def _admin_authorized(self):
+        import hmac as hmac_mod
+
+        expect = _admin_token_expected()
+        if not expect:
+            return False
+        got = (self.headers.get("X-Admin-Token") or "").strip()
+        if not got:
+            return False
+        return hmac_mod.compare_digest(got, expect)
+
+    def _send_html(self, status, body_bytes):
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body_bytes)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body_bytes)
+
+    def _send_text(self, status, text, content_type="text/plain; charset=utf-8"):
+        body = text.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
         path = urlparse(self.path).path.rstrip("/") or "/"
-        if path not in ("/redeem", "/validate", "/bind-platform"):
+        if path not in (
+            "/redeem",
+            "/validate",
+            "/bind-platform",
+            "/telemetry",
+            "/admin/login",
+        ):
             self._send_json(404, _payload_base(ok=False, error="Not Found"))
             return
 
@@ -685,6 +1190,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, _payload_base(ok=False, error="无效 JSON"))
             return
 
+        if path == "/admin/login":
+            status, data = admin_login(str(payload.get("password") or ""))
+            self._send_json(status, data)
+            return
+
         ok_sig, sig_err = _verify_request_sig(path, payload)
         if not ok_sig:
             self._send_json(401, _payload_base(ok=False, error=sig_err or "请求签名无效"))
@@ -700,6 +1210,11 @@ class Handler(BaseHTTPRequestHandler):
                 str(payload.get("machine_id") or ""),
                 str(payload.get("platform") or ""),
             )
+        elif path == "/telemetry":
+            status, data = ingest_telemetry(
+                str(payload.get("machine_id") or ""),
+                payload.get("events"),
+            )
         else:
             status, data = validate(
                 str(payload.get("machine_id") or ""),
@@ -708,10 +1223,40 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(status, data)
 
     def do_GET(self):
-        path = urlparse(self.path).path.rstrip("/") or "/"
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/") or "/"
         if path in ("/", "/health"):
             self._send_json(200, _payload_base(ok=True, service="jindou-license"))
             return
+
+        if path in ("/admin", "/admin/"):
+            # 不 302 到绝对 /admin/：经 nginx /bgj/ 反代时会丢前缀
+            html_path = _admin_html_path()
+            if not os.path.isfile(html_path):
+                self._send_text(500, "admin_dashboard.html missing")
+                return
+            with open(html_path, "rb") as f:
+                self._send_html(200, f.read())
+            return
+
+        if path == "/admin/api/stats":
+            if not ADMIN_PASSWORD:
+                self._send_json(
+                    503, {"ok": False, "error": "看板未启用：请配置 BGJ_ADMIN_PASSWORD"}
+                )
+                return
+            if not self._admin_authorized():
+                self._send_json(401, {"ok": False, "error": "未登录或令牌无效"})
+                return
+            qs = parse_qs(parsed.query or "")
+            day = (qs.get("day") or [""])[0]
+            days = (qs.get("days") or ["7"])[0]
+            platform = (qs.get("platform") or [""])[0]
+            plan = (qs.get("plan") or [""])[0]
+            status, data = admin_stats(day=day, days=days, platform=platform, plan=plan)
+            self._send_json(status, data)
+            return
+
         self._send_json(404, _payload_base(ok=False, error="Not Found"))
 
 
@@ -721,6 +1266,8 @@ def main():
         print("WARNING: JINDOU_SIGNING_SEED unset — license_token will not be issued")
     if not API_KEY:
         print("WARNING: JINDOU_API_KEY unset — request signature not enforced")
+    if not ADMIN_PASSWORD:
+        print("WARNING: BGJ_ADMIN_PASSWORD unset — /admin dashboard disabled")
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
     print("jindou-license listening on %s:%s, db=%s" % (HOST, PORT, DB_PATH))
     httpd.serve_forever()

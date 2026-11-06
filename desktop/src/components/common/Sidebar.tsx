@@ -3,6 +3,7 @@ import { useCurrentAutoMessage } from '@/hooks/useAutoMessage'
 import { useCurrentAutoPopUp } from '@/hooks/useAutoPopUp'
 import { useAutoReply } from '@/hooks/useAutoReply'
 import { useCurrentLiveControl } from '@/hooks/useLiveControl'
+import { useViewerAccountsStore } from '@/hooks/useViewerAccounts'
 import { cn } from '@/lib/utils'
 import { openTutorial } from '@/utils/tutorial'
 import {
@@ -14,6 +15,7 @@ import {
   CarbonIbmEventAutomation,
   CarbonIbmWatsonTextToSpeech,
   CarbonSettings,
+  CarbonUsersChat,
 } from '../icons/carbon'
 
 // v1.2 暂缓：CarbonMicrophoneFilled（语音设置）
@@ -30,48 +32,48 @@ export default function Sidebar() {
   const isAutoMessageRunning = useCurrentAutoMessage(context => context.isRunning)
   const isAutoPopupRunning = useCurrentAutoPopUp(context => context.isRunning)
   const { isRunning: isAutoReplyRunning } = useAutoReply()
+  const isViewerDanmakuRunning = useViewerAccountsStore(s =>
+    Object.values(s.runtime).some(r => r.isRunning),
+  )
+
+  const iconClass = 'h-5 w-5 shrink-0'
 
   const tabs: SidebarTab[] = [
     {
       id: '/',
       name: '打开中控台',
       isRunning: isLiveControlConnected,
-      icon: <CarbonContentDeliveryNetwork className="w-5 h-5" />,
+      icon: <CarbonContentDeliveryNetwork className={iconClass} />,
     },
     {
       id: '/auto-message',
       name: '自动发言',
       isRunning: isAutoMessageRunning,
-      icon: <CarbonChat className="w-5 h-5" />,
+      icon: <CarbonChat className={iconClass} />,
     },
     {
       id: '/auto-popup',
       name: '自动弹窗',
       isRunning: isAutoPopupRunning,
-      icon: <CarbonBlockStorage className="w-5 h-5" />,
+      icon: <CarbonBlockStorage className={iconClass} />,
     },
     {
       id: '/auto-reply',
       name: '自动回复',
       isRunning: isAutoReplyRunning,
-      icon: <CarbonIbmEventAutomation className="w-5 h-5" />,
+      icon: <CarbonIbmEventAutomation className={iconClass} />,
     },
     // v1.2 暂缓：直播话术 / 语音设置
-    // {
-    //   id: '/live-script',
-    //   name: '直播话术',
-    //   isRunning: isVoiceRunning,
-    //   icon: <CarbonDocument className="w-5 h-5" />,
-    // },
-    // {
-    //   id: '/voice-broadcast',
-    //   name: '语音设置',
-    //   icon: <CarbonMicrophoneFilled className="w-5 h-5" />,
-    // },
     {
       id: '/ai-chat',
       name: 'AI 助手',
-      icon: <CarbonIbmWatsonTextToSpeech className="w-5 h-5" />,
+      icon: <CarbonIbmWatsonTextToSpeech className={iconClass} />,
+    },
+    {
+      id: '/viewer-danmaku',
+      name: '小号互动',
+      isRunning: isViewerDanmakuRunning,
+      icon: <CarbonUsersChat className={iconClass} />,
     },
   ]
   return (
@@ -109,34 +111,34 @@ export default function Sidebar() {
         </nav>
       </div>
 
-      <div className="border-t p-4 space-y-1">
+      <div className="space-y-1 border-t px-6 py-4">
         <Link
           to="/membership"
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground no-underline"
+          className="flex w-full items-center gap-3 rounded-lg px-4 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground no-underline"
         >
-          <CarbonGift className="h-4 w-4" />
+          <CarbonGift className={iconClass} />
           会员权益
         </Link>
         <button
           type="button"
           onClick={() => void openTutorial()}
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex w-full items-center gap-3 rounded-lg px-4 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          <CarbonDocument className="h-4 w-4" />
+          <CarbonDocument className={iconClass} />
           使用教程
         </button>
         <NavLink
           to="/settings"
           className={({ isActive }) =>
             cn(
-              'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors no-underline',
+              'flex w-full items-center gap-3 rounded-lg px-4 py-1.5 text-sm transition-colors no-underline',
               isActive
                 ? 'bg-primary/10 text-primary'
                 : 'text-muted-foreground hover:bg-muted hover:text-foreground',
             )
           }
         >
-          <CarbonSettings className="h-4 w-4" />
+          <CarbonSettings className={iconClass} />
           应用设置
         </NavLink>
       </div>

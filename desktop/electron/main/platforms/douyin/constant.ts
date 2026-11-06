@@ -15,7 +15,8 @@ export const URLS = {
 } as const
 
 export const REGEXPS = {
-  LOGIN_PAGE: /.*fxg\.jinritemai\.com\/login\/common.*/,
+  // 兼容 /login、/login/common、/login/unable 等登录相关落地页
+  LOGIN_PAGE: /fxg\.jinritemai\.com\/login(?:\/|$|\?|#)/,
 }
 
 export const SELECTORS = {
@@ -47,6 +48,10 @@ export const SELECTORS = {
   LIVE_OVER_CLOSE_BUTTON: 'div.auxo-modal-content svg[class^="liveOverCloseIcon"]',
   /** 未直播时【直播互动】区域 */
   NO_LIVE: 'div[class^="noLiveData"]',
+  /** 开启「画面」后直播互动区出现的预览 */
+  LIVE_PREVIEW_VIDEO: 'video',
+  /** 「画面」开关：配合文案精确匹配，class 前缀会变 */
+  LIVE_PREVIEW_TOGGLE: 'button, [role="button"]',
   /** 有新的评论时会弹出的按钮，点击后刷新新评论 */
   NEW_COMMENT_LABEL: '[class^="newCommentLabel"]',
   /** 电商罗盘已登录状态 */
@@ -56,6 +61,8 @@ export const SELECTORS = {
 export const TEXTS = {
   POPUP_BUTTON_CANCLE: '取消讲解',
   POPUP_BUTTON: '讲解',
+  LIVE_INTERACTION: '直播互动',
+  LIVE_PREVIEW_TOGGLE: '画面',
 } as const
 
 /**

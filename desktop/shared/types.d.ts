@@ -5,6 +5,25 @@ declare type Account = {
   disabled?: boolean
 }
 
+/** 真人小号（观众端互动号），与中控 Account 分池 */
+declare type ViewerAccount = {
+  readonly id: string
+  name: string
+  /** 与中控平台 key 对齐 */
+  platform: LiveControlPlatform
+}
+
+declare type ViewerDanmakuConfig = {
+  scheduler: {
+    interval: [number, number]
+  }
+  messages: {
+    content: string
+  }[]
+  random?: boolean
+  extraSpaces?: boolean
+}
+
 /** IPC 任务类调用统一结果 */
 declare type TaskIpcResult = { ok: true } | { ok: false; error: string }
 

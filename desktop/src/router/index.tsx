@@ -10,6 +10,7 @@ import LiveControl from '@/pages/LiveControl'
 // import VoiceBroadcast from '@/pages/VoiceBroadcast'
 import Membership from '@/pages/Membership'
 import Settings from '@/pages/SettingsPage'
+import ViewerDanmaku from '@/pages/ViewerDanmaku'
 import App from '../App'
 
 export const router = createHashRouter([
@@ -24,6 +25,10 @@ export const router = createHashRouter([
       {
         path: '/auto-message',
         element: <AutoMessage />,
+      },
+      {
+        path: '/viewer-danmaku',
+        element: <ViewerDanmaku />,
       },
       {
         path: '/auto-popup',

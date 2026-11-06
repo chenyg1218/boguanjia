@@ -40,8 +40,11 @@ export function friendlyError(error: unknown, fallback = '操作失败，请查�
   if (/Timeout|timeout|超时|waiting for/i.test(msg)) {
     return '操作超时。请关闭无头模式后重试，并确认中控台页面已打开且网络正常'
   }
+  if (/打开页面时浏览器被关闭|浏览器未就绪|登录过程中浏览器被关闭/i.test(msg)) {
+    return msg
+  }
   if (/Target closed|browser.*closed|已关闭|Target page.*closed/i.test(msg)) {
-    return '浏览器或页面已关闭，连接中断。请重新连接直播控制台'
+    return '浏览器或页面已关闭，连接中断。请重新登录互动号，并确认弹出的 Chrome 窗口未被关闭'
   }
   if (/ECONNREFUSED|net::|ERR_/i.test(msg)) {
     return `网络或页面加载失败：${msg}。请检查网络后重试`

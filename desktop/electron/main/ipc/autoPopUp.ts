@@ -5,6 +5,7 @@ import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { createLogger } from '#/logger'
 import { accountManager } from '#/managers/AccountManager'
 import { assertAccountLicensed } from '#/services/licenseGate'
+import { telemetryService } from '#/services/TelemetryService'
 import { toTaskResult, typedIpcMainHandle } from '#/utils'
 
 const TASK_NAME = '自动弹窗'
@@ -15,7 +16,14 @@ function setupIpcHandlers() {
     const result = await Result.pipe(
       assertAccountLicensed(accountId),
       Result.andThen(() => accountManager.getSession(accountId)),
-      Result.andThen(accountSession => accountSession.startTask({ type: TASK_TYPE, config })),
+      Result.andThen(accountSession =>
+        Result.pipe(
+          accountSession.startTask({ type: TASK_TYPE, config }),
+          Result.inspect(() => {
+            telemetryService.trackTaskStart(TASK_TYPE, accountSession.livePlatform)
+          }),
+        ),
+      ),
       Result.inspectError(error => {
         const logger = createLogger(`@${accountManager.getAccountName(accountId)}`).scope(TASK_NAME)
         logger.error('启动任务失败：', error)

@@ -34,7 +34,7 @@ import {
   useCurrentChromeConfigActions,
 } from '@/hooks/useChromeConfig'
 import { useLicense } from '@/hooks/useLicense'
-import { useCurrentLiveControl, useCurrentLiveControlActions } from '@/hooks/useLiveControl'
+import { useCurrentLiveControl, useLiveControlStore } from '@/hooks/useLiveControl'
 import { useOnboardingStore } from '@/hooks/useOnboarding'
 import { useToast } from '@/hooks/useToast'
 import { cn } from '@/lib/utils'
@@ -115,7 +115,7 @@ const StatusCard = React.memo(() => {
 })
 
 const ConnectToLiveControl = React.memo(() => {
-  const { setIsConnected } = useCurrentLiveControlActions()
+  const setIsConnectedFor = useLiveControlStore(s => s.setIsConnected)
   const platform = useCurrentLiveControl(context => context.platform)
   const isConnected = useCurrentLiveControl(context => context.isConnected)
   const chromePath = useCurrentChromeConfig(context => context.path)
@@ -149,10 +149,11 @@ const ConnectToLiveControl = React.memo(() => {
       if (!opts?.silent) toast.error('当前账号无效，请在右侧账号栏重新选择')
       return
     }
+    const accountId = account.id
     try {
       const result = await window.ipcRenderer.invoke(
         IPC_CHANNELS.tasks.liveControl.disconnect,
-        account.id,
+        accountId,
       )
       if (result && typeof result === 'object' && 'ok' in result && !result.ok) {
         if (!opts?.silent) toast.error(result.error || '断开连接失败，可重启应用后再试')
@@ -164,7 +165,8 @@ const ConnectToLiveControl = React.memo(() => {
         toast.error(error instanceof Error ? error.message : '断开连接失败，可重启应用后再试')
       }
     } finally {
-      setIsConnected('disconnected')
+      // 绑定发起连接的账号，避免异步期间切换账号写错状态
+      setIsConnectedFor(accountId, 'disconnected')
     }
   })
 
@@ -178,9 +180,10 @@ const ConnectToLiveControl = React.memo(() => {
         toast.error(DISABLED_ACCOUNT_HINT)
         return
       }
+      const accountId = account.id
       bindCancelRequestedRef.current = false
       bindDialogShownRef.current = false
-      setIsConnected('connecting')
+      setIsConnectedFor(accountId, 'connecting')
       // storageState 仅用于旧版 localStorage → 主进程加密存储的一次性迁移
       const result = await window.ipcRenderer.invoke(IPC_CHANNELS.tasks.liveControl.connect, {
         headless,
@@ -191,15 +194,15 @@ const ConnectToLiveControl = React.memo(() => {
       })
 
       if (bindCancelRequestedRef.current) {
-        setIsConnected('disconnected')
+        setIsConnectedFor(accountId, 'disconnected')
         return
       }
 
       if (result.ok) {
-        setIsConnected('connected')
+        setIsConnectedFor(accountId, 'connected')
         useOnboardingStore.getState().markConnectedOnce()
         if (storageState) {
-          useChromeConfigStore.getState().clearStorageState(account.id)
+          useChromeConfigStore.getState().clearStorageState(accountId)
         }
         if (result.needsPlatformBindConfirm) {
           openBindDialog(platform)
@@ -215,7 +218,7 @@ const ConnectToLiveControl = React.memo(() => {
       setBindDialogOpen(false)
       setPendingBindPlatform(null)
       bindDialogShownRef.current = false
-      setIsConnected('disconnected')
+      if (account) setIsConnectedFor(account.id, 'disconnected')
       toast.error(error instanceof Error ? error.message : '连接直播控制台失败')
     }
   })
