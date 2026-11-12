@@ -1,5 +1,5 @@
 import { useMemoizedFn } from 'ahooks'
-import { ChevronLeft, ChevronRight, Copy, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy, Pencil, Plus, Trash } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { useAccounts } from '@/hooks/useAccounts'
@@ -28,7 +28,7 @@ const DEFAULT_COPY_MODULES: CopyAccountConfigModule[] = [
   'autoMessage',
   'autoPopUp',
   'autoReply',
-  // v1.2 暂缓：'voiceBroadcast',
+  'voiceBroadcast',
 ]
 
 const OPTIONAL_COPY_MODULES: CopyAccountConfigModule[] = ['chrome']
@@ -226,14 +226,15 @@ function AccountCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 text-destructive hover:text-destructive opacity-100"
+              className="h-6 w-6 text-muted-foreground hover:text-destructive"
               onClick={e => {
                 e.stopPropagation()
                 onDelete()
               }}
               title="删除账号"
+              aria-label="删除账号"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash className="h-3.5 w-3.5" />
             </Button>
           ) : null}
         </div>

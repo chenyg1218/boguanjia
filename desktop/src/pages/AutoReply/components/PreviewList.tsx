@@ -1,4 +1,4 @@
-import { CheckIcon, SendHorizontalIcon } from 'lucide-react'
+import { CheckIcon } from 'lucide-react'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -87,13 +87,13 @@ export default function PreviewList({
                           </span>
                         ) : (
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 shrink-0"
-                            title="发送"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 shrink-0 px-2"
+                            title="发送这条回复"
                             onClick={() => handleSendReply(reply.replyContent, reply.commentId)}
                           >
-                            <SendHorizontalIcon className="h-4 w-4" />
+                            发送
                           </Button>
                         )}
                       </div>

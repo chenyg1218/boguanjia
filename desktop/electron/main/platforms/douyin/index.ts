@@ -2,8 +2,10 @@ import { Result } from '@praha/byethrow'
 import type { Page } from 'playwright'
 import { UnexpectedError } from '#/errors/AppError'
 import {
+  CommentAreaBlockedError,
   ElementDisabledError,
   ElementNotFoundError,
+  GoodsListBlockedError,
   type PlatformError,
 } from '#/errors/PlatformError'
 import type { BrowserSession } from '#/managers/BrowserSessionManager'
@@ -32,6 +34,7 @@ import { REGEXPS, SELECTORS, TEXTS, URLS } from './constant'
 import { douyinElementFinder as elementFinder } from './element-finder'
 import { DouyinLiveEndedWatcher } from './liveEndedWatcher'
 import { ensureLivePreviewOn } from './livePreview'
+import { isCommentAreaBlocked, isGoodsListBlocked } from './overlays'
 import { resolveDouyinAudienceRoom } from './resolveAudienceRoomUrl'
 
 const PLATFORM_NAME = '抖音小店' as const
@@ -123,11 +126,24 @@ export class DouyinPlatform
         await ensureLivePreviewOn(page)
         return Result.succeed(page)
       }),
-      Result.andThen(page => getItemFromVirtualScroller(page, elementFinder, id)),
-      Result.andThen(item => elementFinder.getPopUpButtonFromGoodsItem(item)),
-      Result.andThen(popupBtn =>
-        toggleButton(popupBtn, TEXTS.POPUP_BUTTON, TEXTS.POPUP_BUTTON_CANCLE, signal),
-      ),
+      Result.andThen(async page => {
+        // 面板盖住时仍直接走 DOM（dispatchEvent），不要求视觉可点
+        const result = await toggleButton(
+          () =>
+            Result.pipe(
+              getItemFromVirtualScroller(page, elementFinder, id),
+              Result.andThen(item => elementFinder.getPopUpButtonFromGoodsItem(item)),
+            ),
+          TEXTS.POPUP_BUTTON,
+          TEXTS.POPUP_BUTTON_CANCLE,
+          signal,
+        )
+        // 只有真失败且列表仍被挡住时，才让任务侧等待（不停、不切品）
+        if (Result.isFailure(result) && (await isGoodsListBlocked(page, SELECTORS.GOODS_LIST_ROOT))) {
+          return Result.fail(new GoodsListBlockedError())
+        }
+        return result
+      }),
     )
   }
 
@@ -141,7 +157,17 @@ export class DouyinPlatform
           if (el) await el.dispatchEvent('click').catch(() => undefined)
         }
       }),
-      Result.andThen(page => comment(page, elementFinder, message, pinTop)),
+      Result.andThen(async page => {
+        // 面板盖住时仍先直接发；只有失败且评论区不可用才交给任务侧等待
+        const result = await comment(page, elementFinder, message, pinTop)
+        if (
+          Result.isFailure(result) &&
+          (await isCommentAreaBlocked(page, SELECTORS.commentInput.ROOT))
+        ) {
+          return Result.fail(new CommentAreaBlockedError())
+        }
+        return result
+      }),
     )
   }
 

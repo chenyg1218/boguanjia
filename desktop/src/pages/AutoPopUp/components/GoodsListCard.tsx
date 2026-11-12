@@ -36,17 +36,29 @@ const CommonList = () => {
   const isConnected = useCurrentLiveControl(c => c.isConnected)
   const account = useAccounts(s => s.getCurrentAccount())
 
-  // 合并 goodsItems 和 goodsIds：以 goodsItems 为主，goodsIds 作为兼容
+  // 合并 goodsItems 和 goodsIds：以 goodsItems 为主，goodsIds 作为兼容；默认至少保留第一行
   const items = React.useMemo(() => {
     if (goodsItems && goodsItems.length > 0) return goodsItems
-    return goodsIds.map(id => ({ id, repeatCount: 1, itemInterval: undefined }))
+    if (goodsIds.length > 0) {
+      return goodsIds.map(id => ({ id, repeatCount: 1, itemInterval: undefined }))
+    }
+    return [{ id: 1, repeatCount: 1, itemInterval: undefined }]
   }, [goodsItems, goodsIds])
 
-  // 同步更新 goodsIds 和 goodsItems
+  // 同步更新 goodsIds 和 goodsItems（至少保留第一行）
   const syncUpdate = useMemoizedFn((newItems: typeof items) => {
-    setGoodsItems(newItems)
-    setGoodsIds(newItems.map(item => item.id))
+    const next =
+      newItems.length > 0 ? newItems : [{ id: 1, repeatCount: 1, itemInterval: undefined }]
+    setGoodsItems(next)
+    setGoodsIds(next.map(item => item.id))
   })
+
+  // 空列表时写入默认第一行
+  React.useEffect(() => {
+    if ((!goodsItems || goodsItems.length === 0) && goodsIds.length === 0) {
+      syncUpdate([{ id: 1, repeatCount: 1, itemInterval: undefined }])
+    }
+  }, [goodsItems, goodsIds, syncUpdate])
 
   const handleGoodsIdChange = useMemoizedFn((index: number, value: string) => {
     const numValue = Number(value)
@@ -96,10 +108,6 @@ const CommonList = () => {
     }
     if (isConnected !== 'connected') {
       toast.error('请先连接直播控制台')
-      return
-    }
-    if (items.length > 0) {
-      toast.error('商品列表非空时不会自动覆盖；请先清空或改用批量添加')
       return
     }
     setFilling(true)
@@ -162,40 +170,75 @@ const CommonList = () => {
               size="sm"
               onClick={handleFillFromLiveControl}
               disabled={filling || isConnected !== 'connected'}
+              title="从中控台自动填充商品"
             >
               <RefreshCwIcon className={`mr-0 h-4 w-4 ${filling ? 'animate-spin' : ''}`} />
               {filling ? '读取中…' : '自动填充'}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setBatchOpen(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBatchOpen(true)}
+              title="批量添加商品"
+            >
               <ListPlusIcon className="mr-0 h-4 w-4" />
               批量添加
             </Button>
-            <Button variant="outline" size="sm" onClick={addGoodsId}>
+            <Button size="sm" onClick={addGoodsId} title="添加商品">
               <PlusIcon className="mr-0 h-4 w-4" />
               添加商品
             </Button>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground">
-          填中控台商品列表里的序号。循环次数 = 这一轮连续弹几次；时长填 0 就用下面的每品讲解时长。
-        </p>
+        <div className="space-y-0.5 text-xs text-muted-foreground">
+          <p>填中控台商品列表里的序号；不会填可点「自动填充」。</p>
+          <p>
+            循环次数：一轮里连续弹几次。讲解时长：该品弹多久（秒），填 0 则用下方「每品讲解时长」。
+          </p>
+        </div>
       </div>
 
-      <div className="space-y-3">
-        {items.map((item, index) => (
-          <GoodsListItem
-            // biome-ignore lint/suspicious/noArrayIndexKey: 下标不影响
-            key={index}
-            item={item}
-            index={index}
-            onChangeId={handleGoodsIdChange}
-            onChangeRepeatCount={handleRepeatCountChange}
-            onChangeItemInterval={handleItemIntervalChange}
-            onDelete={() => {
-              syncUpdate(items.filter((_, i) => i !== index))
-            }}
-          />
-        ))}
+      <div className="space-y-2">
+        <div className="flex gap-2 items-center px-0.5 text-xs text-muted-foreground select-none">
+          <span className="w-20 text-center">商品序号</span>
+          <span className="w-3" />
+          <span className="w-20 text-center">循环次数</span>
+          <span className="w-4" />
+          <span className="w-[11.5rem] text-center">讲解时长（秒）</span>
+          <span className="w-[120px] shrink-0 text-center">操作</span>
+        </div>
+        <div className="space-y-3">
+          {items.map((item, index) => (
+            <GoodsListItem
+              // biome-ignore lint/suspicious/noArrayIndexKey: 下标不影响
+              key={index}
+              item={item}
+              index={index}
+              onChangeId={handleGoodsIdChange}
+              onChangeRepeatCount={handleRepeatCountChange}
+              onChangeItemInterval={handleItemIntervalChange}
+              deletable={index > 0}
+              canMoveUp={index > 0}
+              canMoveDown={index < items.length - 1}
+              onMoveUp={() => {
+                if (index === 0) return
+                const next = [...items]
+                ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
+                syncUpdate(next)
+              }}
+              onMoveDown={() => {
+                if (index >= items.length - 1) return
+                const next = [...items]
+                ;[next[index], next[index + 1]] = [next[index + 1], next[index]]
+                syncUpdate(next)
+              }}
+              onDelete={() => {
+                if (index === 0) return
+                syncUpdate(items.filter((_, i) => i !== index))
+              }}
+            />
+          ))}
+        </div>
       </div>
 
       <Dialog open={batchOpen} onOpenChange={setBatchOpen}>

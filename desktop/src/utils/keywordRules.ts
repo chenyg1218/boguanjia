@@ -1,13 +1,14 @@
-/** 关键词规则：回评 + 可选读稿 + 可选弹窗 */
+/** 关键词规则：回评 */
 
+/** @deprecated 读稿通道已隐藏，仅保留类型兼容旧配置 */
 export type KeywordReplyChannel = 'comment' | 'voice' | 'both'
 
 export interface KeywordRule {
   keywords: string[]
   contents: string[]
-  /** 默认公屏 */
+  /** @deprecated 读稿已隐藏，运行时固定公屏 */
   channel?: KeywordReplyChannel
-  /** 有则弹对应商品序号 */
+  /** @deprecated 弹窗商品序号已隐藏 */
   goodsId?: number
   /** 同规则冷却秒数，默认 8 */
   cooldownSec?: number
@@ -19,8 +20,8 @@ export function normalizeKeywordRule(rule: KeywordRule): KeywordRule {
   return {
     keywords: rule.keywords ?? [],
     contents: rule.contents ?? [],
-    channel: rule.channel ?? 'comment',
-    goodsId: rule.goodsId && rule.goodsId > 0 ? rule.goodsId : undefined,
+    channel: 'comment',
+    goodsId: undefined,
     cooldownSec:
       typeof rule.cooldownSec === 'number' && rule.cooldownSec >= 0 ? rule.cooldownSec : 8,
   }
@@ -29,10 +30,12 @@ export function normalizeKeywordRule(rule: KeywordRule): KeywordRule {
 export function serializeKeywordRules(rules: KeywordRule[]): string {
   return rules
     .map(rule => {
+      // 空规则显示为空行，便于编辑区展示填写提示，而不是无意义的 `|`
+      if (rule.keywords.length === 0 && rule.contents.length === 0) {
+        return ''
+      }
       const base = `${rule.keywords.join('/')}|${rule.contents.join('|')}`
       const extras: string[] = []
-      if (rule.goodsId && rule.goodsId > 0) extras.push(`#goods:${rule.goodsId}`)
-      if (rule.channel && rule.channel !== 'comment') extras.push(`#channel:${rule.channel}`)
       if (typeof rule.cooldownSec === 'number' && rule.cooldownSec !== 8) {
         extras.push(`#cd:${rule.cooldownSec}`)
       }
@@ -43,7 +46,7 @@ export function serializeKeywordRules(rules: KeywordRule[]): string {
 
 /**
  * 解析批量编辑文本。空行忽略。
- * 可选尾部：`#goods:3` `#channel:both` `#cd:10`
+ * 可选尾部：`#cd:10`（旧版 `#goods:` / `#channel:*` 会被忽略）
  * @throws Error 行格式非法时抛出中文错误
  */
 export function parseKeywordBatchText(text: string): KeywordRule[] {
@@ -59,8 +62,6 @@ export function parseKeywordBatchText(text: string): KeywordRule[] {
       throw new Error(`第 ${index + 1} 行错误：第 ${emptyKeywordIndex + 1} 个关键词是空的`)
     }
 
-    let goodsId: number | undefined
-    let channel: KeywordReplyChannel | undefined
     let cooldownSec: number | undefined
     const contents: string[] = []
 
@@ -68,14 +69,8 @@ export function parseKeywordBatchText(text: string): KeywordRule[] {
       if (!item) {
         throw new Error(`第 ${index + 1} 行错误：存在空的回复内容`)
       }
-      const goodsMatch = /^#goods:(\d+)$/i.exec(item)
-      if (goodsMatch) {
-        goodsId = Number(goodsMatch[1]) || undefined
-        continue
-      }
-      const channelMatch = /^#channel:(comment|voice|both)$/i.exec(item)
-      if (channelMatch) {
-        channel = channelMatch[1].toLowerCase() as KeywordReplyChannel
+      // 兼容旧批量文本：忽略弹窗 / 读稿标记
+      if (/^#goods:(\d+)$/i.test(item) || /^#channel:(comment|voice|both)$/i.test(item)) {
         continue
       }
       const cdMatch = /^#cd:(\d+)$/i.exec(item)
@@ -86,11 +81,11 @@ export function parseKeywordBatchText(text: string): KeywordRule[] {
       contents.push(item)
     }
 
-    if (contents.length === 0 && !goodsId) {
+    if (contents.length === 0) {
       throw new Error(`第 ${index + 1} 行错误：请至少提供一条回复内容`)
     }
 
-    return normalizeKeywordRule({ keywords, contents, channel, goodsId, cooldownSec })
+    return normalizeKeywordRule({ keywords, contents, cooldownSec })
   })
 }
 

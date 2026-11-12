@@ -1,5 +1,6 @@
-import { TrashIcon } from 'lucide-react'
 import React from 'react'
+import { MoveItemButtons } from '@/components/common/MoveItemButtons'
+import { RemoveCircleIcon } from '@/components/icons/RemoveCircleIcon'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -17,6 +18,11 @@ const GoodsListItem = React.memo(function GoodsListItem({
   onChangeRepeatCount,
   onChangeItemInterval,
   onDelete,
+  onMoveUp,
+  onMoveDown,
+  deletable = true,
+  canMoveUp = false,
+  canMoveDown = false,
 }: {
   item: GoodsItemData
   index: number
@@ -24,6 +30,11 @@ const GoodsListItem = React.memo(function GoodsListItem({
   onChangeRepeatCount: (index: number, value: number) => void
   onChangeItemInterval: (index: number, min: number, max: number) => void
   onDelete: () => void
+  onMoveUp: () => void
+  onMoveDown: () => void
+  deletable?: boolean
+  canMoveUp?: boolean
+  canMoveDown?: boolean
 }) {
   const repeatCount = item.repeatCount ?? 1
   const intervalMin = item.itemInterval ? item.itemInterval[0] / 1000 : 0
@@ -37,10 +48,10 @@ const GoodsListItem = React.memo(function GoodsListItem({
         onChange={e => onChangeId(index, e.target.value)}
         className="w-20"
         min="1"
-        placeholder="序号"
-        title="商品序号"
+        placeholder="请输入序号"
+        title="中控台商品列表中的序号"
       />
-      <span className="text-xs text-muted-foreground whitespace-nowrap">×</span>
+      <span className="text-xs text-muted-foreground whitespace-nowrap w-3 text-center">×</span>
       <Input
         type="number"
         value={repeatCount}
@@ -48,11 +59,10 @@ const GoodsListItem = React.memo(function GoodsListItem({
         className="w-20"
         min="1"
         max="10000"
-        placeholder="次数"
-        title="循环弹窗次数"
+        placeholder="请输入次数"
+        title="一轮里连续弹几次该商品"
       />
-      <span className="text-xs text-muted-foreground whitespace-nowrap">次</span>
-      <span className="text-xs text-muted-foreground whitespace-nowrap ml-1">时长</span>
+      <span className="text-xs text-muted-foreground whitespace-nowrap w-4 text-center">次</span>
       <Input
         type="number"
         value={intervalMin}
@@ -61,7 +71,7 @@ const GoodsListItem = React.memo(function GoodsListItem({
         min="0"
         max="20000"
         placeholder="最小"
-        title="单品讲解时长最小值（秒），0 表示用每品讲解时长"
+        title="该品讲解时长最小值（秒），0 表示用下方每品讲解时长"
       />
       <span className="text-xs text-muted-foreground">~</span>
       <Input
@@ -72,17 +82,28 @@ const GoodsListItem = React.memo(function GoodsListItem({
         min="0"
         max="20000"
         placeholder="最大"
-        title="单品讲解时长最大值（秒），0 表示用每品讲解时长"
+        title="该品讲解时长最大值（秒），0 表示用下方每品讲解时长"
       />
-      <span className="text-xs text-muted-foreground whitespace-nowrap">秒</span>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={onDelete}
-        className="opacity-0 group-hover:opacity-100 shrink-0"
-      >
-        <TrashIcon className="h-4 w-4" />
-      </Button>
+      <MoveItemButtons
+        canMoveUp={canMoveUp}
+        canMoveDown={canMoveDown}
+        onMoveUp={onMoveUp}
+        onMoveDown={onMoveDown}
+      />
+      {deletable ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onDelete}
+          className="h-7 w-7 shrink-0 px-0 text-muted-foreground hover:text-destructive shadow-none"
+          title="删除商品"
+          aria-label="删除商品"
+        >
+          <RemoveCircleIcon className="!size-5" />
+        </Button>
+      ) : (
+        <div className="h-7 w-7 shrink-0" />
+      )}
     </div>
   )
 })

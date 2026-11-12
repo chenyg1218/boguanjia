@@ -11,6 +11,7 @@ import { abortableSleep, mergeWithoutArray, randomInt, takeScreenshot } from '#/
 import windowManager from '#/windowManager'
 import { createIntervalTask } from './IntervalTask'
 import { runWithRetry } from './retry'
+import { isTransientPopupError, runUntilNotTransient } from './transientControl'
 
 const TASK_NAME = '自动弹窗'
 /** 切品前的短暂间隔（讲解时长已在 execute 内等待完毕时使用） */
@@ -80,31 +81,43 @@ export function createAutoPopupTask(
     // 需要续弹卡时：讲解时长在本函数内等待，间隔任务只留切品空隙
     intervalTask.updateInterval(needsCardRefresh ? SWITCH_GAP_MS : next.interval)
 
-    const result = await runWithRetry(
-      async () => {
-        if (signal.aborted) {
-          return Result.fail(new AbortError())
-        }
-        const result = await platform.performPopup(next.id, signal)
-        if (Result.isSuccess(result)) {
-          logger.success(`商品 ${next.id} 讲解成功`)
-        }
-        return result
-      },
+    // 全平台：遮挡/找不到讲解按钮等暂时失败时等待恢复，不停任务、不切品
+    const result = await runUntilNotTransient(
+      () =>
+        runWithRetry(
+          async () => {
+            if (signal.aborted) {
+              return Result.fail(new AbortError())
+            }
+            return platform.performPopup(next.id, signal)
+          },
+          {
+            ...retryOptions,
+            logger,
+            signal,
+            shouldRetry: err => !isTransientPopupError(err),
+            onRetryError: err => {
+              if (isTransientPopupError(err)) return
+              const page = platform.getPopupPage()
+              if (page) takeScreenshot(page, TASK_NAME, account.name)
+            },
+          },
+        ),
       {
-        ...retryOptions,
-        logger,
+        isTransient: isTransientPopupError,
         signal,
-        onRetryError: () => {
-          const page = platform.getPopupPage()
-          if (page) takeScreenshot(page, TASK_NAME, account.name)
-        },
+        onWaiting: err =>
+          logger.warn(
+            `暂时无法讲解商品 ${next.id}（${err.message}），等待恢复后继续；任务不停止`,
+          ),
+        onResumed: () => logger.info(`商品列表已恢复，继续讲解商品 ${next.id}`),
       },
     )
 
     if (Result.isFailure(result)) {
       return result
     }
+    logger.success(`商品 ${next.id} 讲解成功`)
 
     if (!needsCardRefresh || cardVisibleMs == null) {
       return result
@@ -212,7 +225,7 @@ export function createAutoPopupTask(
   )
 }
 
-/** 单次弹指定商品（关键词触发等） */
+/** 单次弹指定商品（关键词触发等）；暂时失败时等待恢复，不直接放弃 */
 export async function performPopupOnce(
   platform: IPlatform,
   goodsId: number,
@@ -221,9 +234,15 @@ export async function performPopupOnce(
   if (!isPerformPopup(platform)) {
     return Result.fail(new Error('当前平台不支持弹窗'))
   }
-  const result = await platform.performPopup(goodsId)
+  const scoped = logger.scope(TASK_NAME)
+  const result = await runUntilNotTransient(() => platform.performPopup(goodsId), {
+    isTransient: isTransientPopupError,
+    onWaiting: err =>
+      scoped.warn(`暂时无法弹窗商品 ${goodsId}（${err.message}），等待恢复后继续`),
+    onResumed: () => scoped.info(`已恢复，继续弹窗商品 ${goodsId}`),
+  })
   if (Result.isSuccess(result)) {
-    logger.scope(TASK_NAME).success(`单次弹窗商品 ${goodsId} 成功`)
+    scoped.success(`单次弹窗商品 ${goodsId} 成功`)
   }
   return result
 }

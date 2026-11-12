@@ -1,5 +1,5 @@
 import { useMemoizedFn } from 'ahooks'
-import { ChevronDown, CircleAlert, Copy, Loader2, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, CircleAlert, Copy, Loader2, Plus } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { maxViewerAccountsForPlan, planDisplayName } from 'shared/licensePlan'
@@ -7,6 +7,7 @@ import { PLATFORM_NAMES } from 'shared/platforms'
 import { ConnectRequiredEmpty } from '@/components/common/ConnectRequiredEmpty'
 import { Title } from '@/components/common/Title'
 import { CarbonPlayFilledAlt, CarbonStopFilledAlt } from '@/components/icons/carbon'
+import { RemoveCircleIcon } from '@/components/icons/RemoveCircleIcon'
 import {
   FeatureSetupWizard,
   FeatureWizardTrigger,
@@ -103,6 +104,7 @@ export default function ViewerDanmakuPage() {
     addMessage,
     updateMessage,
     removeMessage,
+    setMessages,
     copyConfigTo,
   } = useViewerDanmakuActions()
 
@@ -506,12 +508,13 @@ export default function ViewerDanmakuPage() {
                       </p>
                     </div>
                     <Button
-                      size="default"
-                      className="h-10 shrink-0 px-5 text-sm font-medium shadow-sm"
+                      size="sm"
+                      className="shrink-0"
                       disabled={busy || (maxViewers >= 0 && accounts.length >= maxViewers)}
                       onClick={handleAddAccount}
+                      title="添加互动号"
                     >
-                      <Plus className="mr-1.5 h-4 w-4" />
+                      <Plus className="mr-0 h-4 w-4" />
                       添加互动号
                     </Button>
                   </div>
@@ -584,15 +587,15 @@ export default function ViewerDanmakuPage() {
                               </button>
                               {canCopyConfig ? (
                                 <Button
-                                  size="icon"
                                   variant="ghost"
-                                  className="h-8 w-8 text-muted-foreground"
+                                  size="sm"
+                                  className="h-7 w-7 px-0 text-muted-foreground shadow-none"
                                   disabled={busy || connecting}
                                   onClick={() => openCopyDialog(a.id)}
                                   title="复制配置到其他互动号"
                                   aria-label="复制配置到其他互动号"
                                 >
-                                  <Copy className="h-4 w-4" />
+                                  <Copy className="!size-3.5" />
                                 </Button>
                               ) : null}
                               {connected ? (
@@ -605,6 +608,7 @@ export default function ViewerDanmakuPage() {
                                 </Button>
                               ) : (
                                 <Button
+                                  variant="outline"
                                   size="sm"
                                   disabled={busy || connecting}
                                   onClick={() => void loginAccount(a.id)}
@@ -616,14 +620,15 @@ export default function ViewerDanmakuPage() {
                                 </Button>
                               )}
                               <Button
-                                size="icon"
                                 variant="ghost"
-                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                size="sm"
+                                className="h-7 w-7 px-0 text-muted-foreground hover:text-destructive shadow-none"
                                 disabled={busy || connecting}
                                 onClick={() => handleRemove(a.id)}
-                                aria-label="删除"
+                                title="删除账号"
+                                aria-label="删除账号"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <RemoveCircleIcon className="!size-5" />
                               </Button>
                             </div>
                           </li>
@@ -657,6 +662,7 @@ export default function ViewerDanmakuPage() {
                         onAdd={addMessage}
                         onUpdate={updateMessage}
                         onRemove={removeMessage}
+                        onReorder={setMessages}
                       />
                     )}
                   </div>
@@ -686,46 +692,46 @@ export default function ViewerDanmakuPage() {
                         </div>
                       </div>
 
-                      <div className="space-y-2">
+                      <div className="space-y-1">
                         <Label>发送间隔（秒）</Label>
-                        <p className="text-sm text-muted-foreground">
-                          每发完一条后，在此范围内随机等待。最短 3 秒，建议 60～120
-                        </p>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center space-x-2">
                           <Input
                             type="number"
-                            className="w-20"
+                            className="w-24"
                             min={3}
+                            placeholder="最小"
                             value={config.scheduler.interval[0] / 1000}
                             onChange={e => handleIntervalChange(0, e.target.value)}
                           />
                           <span className="text-sm text-muted-foreground">至</span>
                           <Input
                             type="number"
-                            className="w-20"
+                            className="w-24"
                             min={3}
+                            placeholder="最大"
                             value={config.scheduler.interval[1] / 1000}
                             onChange={e => handleIntervalChange(1, e.target.value)}
                           />
                           <span className="text-sm text-muted-foreground">秒</span>
                         </div>
+                        <p className="text-xs text-muted-foreground">
+                          每发完一条后，在此范围内随机等待。最短 3 秒，建议 60～120
+                        </p>
                       </div>
 
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                          <Label htmlFor="vd-spaces" className="cursor-pointer">
-                            插入随机空格
-                          </Label>
-                          <p className="text-sm text-muted-foreground">
-                            在话术中插入空格，降低被当成刷屏屏蔽的概率
-                          </p>
-                        </div>
+                      <div className="flex items-center space-x-2">
                         <Switch
                           id="vd-spaces"
                           checked={!!config.extraSpaces}
                           onCheckedChange={setExtraSpaces}
                         />
+                        <Label htmlFor="vd-spaces" className="cursor-pointer">
+                          插入随机空格
+                        </Label>
                       </div>
+                      <p className="text-xs text-muted-foreground -mt-4">
+                        打开后在话术里加空格，降低被平台当成刷屏屏蔽的概率
+                      </p>
                     </div>
                   </CardContent>
                 </Card>

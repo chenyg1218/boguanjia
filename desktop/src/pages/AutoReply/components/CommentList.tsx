@@ -1,4 +1,3 @@
-import { RefreshCcw } from 'lucide-react'
 import { memo, useId, useMemo, useState } from 'react'
 import { WizardHighlight } from '@/components/onboarding/WizardTarget'
 import { Button } from '@/components/ui/button'
@@ -155,13 +154,13 @@ export default function CommentList({
 
           {isListening === 'error' && (
             <Button
-              variant="ghost"
-              size="icon"
+              variant="outline"
+              size="sm"
               onClick={handleRetry}
               disabled={isConnected !== 'connected'}
               title="重新开始监听"
             >
-              <RefreshCcw className="h-4 w-4" />
+              重试监听
             </Button>
           )}
 

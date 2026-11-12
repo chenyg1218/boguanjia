@@ -30,7 +30,7 @@ const SCENARIOS: Scenario[] = [
     detail:
       '列表只留一个序号即可整场反复弹。「循环次数」主要用于多品混推；单品即使设成 1 也会持续弹，直到你手动停任务。',
     targetId: 'auto-popup-goods',
-    actionLabel: '去改商品列表',
+    actionLabel: '去商品列表，只留一个序号',
     tab: 'goods-list',
   },
   {
@@ -41,7 +41,7 @@ const SCENARIOS: Scenario[] = [
     detail:
       '适合按固定讲解顺序推品。关掉随机后，任务会按商品列表从上到下依次弹出；讲解时长每次会在范围内略有变化，节奏更自然。',
     targetId: 'auto-popup-settings',
-    actionLabel: '去设置讲解时长',
+    actionLabel: '去设置每品讲解时长',
     tab: 'goods-list',
   },
   {
@@ -51,7 +51,7 @@ const SCENARIOS: Scenario[] = [
     tips: ['打开「随机弹窗」', '列表里放好要轮换的商品', '适合多品同时在推、不想固定顺序'],
     detail: '打开随机后，每次从列表里随便抽一个弹出，适合几个品一起推、不想按固定顺序讲解的场次。',
     targetId: 'auto-popup-random',
-    actionLabel: '去开随机弹窗',
+    actionLabel: '去打开「随机弹窗」开关',
     tab: 'goods-list',
   },
   {
@@ -62,7 +62,7 @@ const SCENARIOS: Scenario[] = [
     detail:
       '多品混推时，用「循环次数」控制某一品在一轮里连续弹几次。顺序模式下按加权顺序一轮轮循环，不会弹完一轮就停。',
     targetId: 'auto-popup-goods',
-    actionLabel: '去调循环次数',
+    actionLabel: '去商品列表调高循环次数',
     tab: 'goods-list',
   },
   {
@@ -73,7 +73,7 @@ const SCENARIOS: Scenario[] = [
     detail:
       '可为开场品 / 福利品 / 返场品等组合各绑一组快捷键。任务运行中改配置后，需先停止再开始才会生效。',
     targetId: 'auto-popup-shortcuts',
-    actionLabel: '去配快捷键',
+    actionLabel: '去「快捷键配置」绑定组合',
     tab: 'shortcuts',
   },
 ]
@@ -108,7 +108,7 @@ const InstructionsCard = React.memo(() => {
           <Compass className="h-4 w-4 text-muted-foreground" />
           使用说明
         </CardTitle>
-        <CardDescription>按直播场景选一种配置方式，点「去设置」会定位到对应控件</CardDescription>
+        <CardDescription>按直播场景选一种配置方式，点下方按钮会定位到对应设置项</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -158,7 +158,7 @@ const InstructionsCard = React.memo(() => {
 
           <Collapsible open={detailOpen} onOpenChange={setDetailOpen}>
             <CollapsibleTrigger asChild>
-              <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground">
+              <Button type="button" variant="outline" size="sm" className="h-8">
                 <ChevronDown
                   className={cn('h-3.5 w-3.5 transition-transform', detailOpen && 'rotate-180')}
                 />

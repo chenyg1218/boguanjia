@@ -4,7 +4,7 @@ import { useId, useState } from 'react'
 import { TaskRestartHint } from '@/components/common/TaskRestartHint'
 import { Title } from '@/components/common/Title'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -64,12 +64,14 @@ export default function LiveScriptPage() {
 
   return (
     <div className="container py-8 space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <Title
-          title="直播话术"
-          description="只读稿、不发公屏。支持变量 {A/B/C}、循环与条间间隔；关键词读稿可打断后重念本条。音色与输出设备请到「语音设置」。"
-        />
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <Title
+            title="直播话术"
+            description="只读稿、不发公屏。支持变量 {A/B/C}、循环与条间间隔；关键词读稿可打断后重念本条。音色与输出设备请到「语音设置」。"
+          />
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           {status.running && (
             <Button variant="outline" onClick={() => (status.paused ? resume() : pause())}>
               {status.paused ? (
@@ -119,142 +121,163 @@ export default function LiveScriptPage() {
         </p>
       ) : null}
 
-      <Card>
-        <CardHeader className="flex flex-row items-start justify-between space-y-0">
-          <div>
-            <CardTitle>话术文本</CardTitle>
-            <CardDescription>
-              每行一句。可用 {'{宝宝/家人/老铁}'} 变量，播出时随机展开；也可用 AI
-              整段改写减少复读。
-            </CardDescription>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={rewriting}
-            onClick={() => void handleRewrite()}
-          >
-            <Wand2 className="mr-2 h-4 w-4" />
-            {rewriting ? '改写中…' : 'AI 改写'}
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Textarea
-            className="min-h-[220px] font-mono text-sm"
-            placeholder={
-              '欢迎{宝宝/家人/老铁}来到直播间\n今天团购超划算，{赶紧/抓紧}看小黄车\n喜欢的点点关注'
-            }
-            value={config.script}
-            onChange={e => updateConfig({ script: e.target.value })}
-          />
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center space-x-2">
-              <Switch
-                id={loopId}
-                checked={config.loop}
-                onCheckedChange={checked => updateConfig({ loop: checked })}
-              />
-              <Label htmlFor={loopId}>循环播放</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="whitespace-nowrap">循环方式</Label>
-              <Select
-                value={config.loopMode ?? 'sequential'}
-                onValueChange={v =>
-                  updateConfig({ loopMode: v as 'sequential' | 'random' })
-                }
-              >
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="sequential">顺序循环</SelectItem>
-                  <SelectItem value="random">随机循环</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-2">
-              <Label>条间最小间隔（秒）</Label>
-              <Input
-                type="number"
-                min={0}
-                value={config.lineGapSec?.[0] ?? 2}
-                onChange={e => {
-                  const n = Number(e.target.value) || 0
-                  updateConfig({
-                    lineGapSec: [n, config.lineGapSec?.[1] ?? n],
-                  })
-                }}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>条间最大间隔（秒）</Label>
-              <Input
-                type="number"
-                min={0}
-                value={config.lineGapSec?.[1] ?? 4}
-                onChange={e => {
-                  const n = Number(e.target.value) || 0
-                  updateConfig({
-                    lineGapSec: [config.lineGapSec?.[0] ?? 0, n],
-                  })
-                }}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>整本循环间隔（秒）</Label>
-              <Input
-                type="number"
-                min={0}
-                value={config.bookLoopGapSec ?? 5}
-                onChange={e =>
-                  updateConfig({ bookLoopGapSec: Number(e.target.value) || 0 })
-                }
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-6">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="space-y-6">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <Label>话术文本</Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={rewriting}
+                    onClick={() => void handleRewrite()}
+                  >
+                    <Wand2 className="mr-0 h-4 w-4" />
+                    {rewriting ? '改写中…' : 'AI 改写'}
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  每行一句。可用 {'{宝宝/家人/老铁}'} 变量，播出时随机展开；也可用 AI
+                  整段改写减少复读。
+                </p>
+              </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>手动插播</CardTitle>
-          <CardDescription>
-            读稿中插入一段话（支持变量）。打断后会重念被打断的那条话术。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Textarea
-            className="min-h-[80px] text-sm"
-            placeholder="输入要插播的一句话…"
-            value={insertText}
-            onChange={e => setInsertText(e.target.value)}
-          />
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="live-insert-interrupt"
-                checked={insertInterrupt}
-                onCheckedChange={v => setInsertInterrupt(v === true)}
+              <Textarea
+                className="min-h-[220px] font-mono text-sm"
+                placeholder="请输入直播话术，一行一句"
+                value={config.script}
+                onChange={e => updateConfig({ script: e.target.value })}
               />
-              <Label htmlFor="live-insert-interrupt">打断当前播放</Label>
+
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id={loopId}
+                    checked={config.loop}
+                    onCheckedChange={checked => updateConfig({ loop: checked })}
+                  />
+                  <Label htmlFor={loopId} className="cursor-pointer">
+                    循环播放
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="whitespace-nowrap">循环方式</Label>
+                  <Select
+                    value={config.loopMode ?? 'sequential'}
+                    onValueChange={v =>
+                      updateConfig({ loopMode: v as 'sequential' | 'random' })
+                    }
+                  >
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sequential">顺序循环</SelectItem>
+                      <SelectItem value="random">随机循环</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label>条间间隔（秒）</Label>
+                <div className="flex items-center space-x-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="最小"
+                    className="w-24"
+                    value={config.lineGapSec?.[0] ?? 2}
+                    onChange={e => {
+                      const n = Number(e.target.value) || 0
+                      updateConfig({
+                        lineGapSec: [n, config.lineGapSec?.[1] ?? n],
+                      })
+                    }}
+                  />
+                  <span className="text-sm text-muted-foreground">至</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="最大"
+                    className="w-24"
+                    value={config.lineGapSec?.[1] ?? 4}
+                    onChange={e => {
+                      const n = Number(e.target.value) || 0
+                      updateConfig({
+                        lineGapSec: [config.lineGapSec?.[0] ?? 0, n],
+                      })
+                    }}
+                  />
+                  <span className="text-sm text-muted-foreground">秒</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  每念完一句后随机等待这么久再念下一句。
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <Label>整本循环间隔（秒）</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="例如：5"
+                  className="w-24"
+                  value={config.bookLoopGapSec ?? 5}
+                  onChange={e =>
+                    updateConfig({ bookLoopGapSec: Number(e.target.value) || 0 })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">整本念完后，再隔这么久重新开始。</p>
+              </div>
             </div>
-            <Button
-              size="sm"
-              disabled={!status.running || !insertText.trim()}
-              onClick={() =>
-                void insert(insertText, insertInterrupt).then(ok => {
-                  if (ok) setInsertText('')
-                })
-              }
-            >
-              立即插播
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="space-y-6">
+              <div className="space-y-1">
+                <Label>手动插播</Label>
+                <p className="text-sm text-muted-foreground">
+                  读稿中插入一段话（支持变量）。打断后会重念被打断的那条话术。
+                </p>
+              </div>
+              <Textarea
+                className="min-h-[80px] text-sm"
+                placeholder="输入要插播的一句话…"
+                value={insertText}
+                onChange={e => setInsertText(e.target.value)}
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="live-insert-interrupt"
+                    checked={insertInterrupt}
+                    onCheckedChange={v => setInsertInterrupt(v === true)}
+                  />
+                  <Label htmlFor="live-insert-interrupt" className="cursor-pointer">
+                    打断当前播放
+                  </Label>
+                </div>
+                <Button
+                  size="sm"
+                  disabled={!status.running || !insertText.trim()}
+                  onClick={() =>
+                    void insert(insertText, insertInterrupt).then(ok => {
+                      if (ok) setInsertText('')
+                    })
+                  }
+                >
+                  立即插播
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

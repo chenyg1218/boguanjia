@@ -1,5 +1,6 @@
-import { X } from 'lucide-react'
 import { useState } from 'react'
+import { MoveItemButtons } from '@/components/common/MoveItemButtons'
+import { RemoveCircleIcon } from '@/components/icons/RemoveCircleIcon'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAutoReplyConfig } from '@/hooks/useAutoReplyConfig'
@@ -23,6 +24,14 @@ export function BlocklistManager() {
     updateBlockList(updatedList)
   }
 
+  const handleMoveUser = (index: number, direction: -1 | 1) => {
+    const target = index + direction
+    if (target < 0 || target >= blockedUsers.length) return
+    const next = [...blockedUsers]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    updateBlockList(next)
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -38,13 +47,21 @@ export function BlocklistManager() {
             // biome-ignore lint/suspicious/noArrayIndexKey: 下标无妨
             <div key={index} className="flex items-center gap-2 group">
               <div className="flex-1 text-sm p-2 rounded bg-muted/50">{user}</div>
+              <MoveItemButtons
+                canMoveUp={index > 0}
+                canMoveDown={index < blockedUsers.length - 1}
+                onMoveUp={() => handleMoveUser(index, -1)}
+                onMoveDown={() => handleMoveUser(index, 1)}
+              />
               <Button
                 variant="ghost"
-                size="icon"
-                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                size="sm"
+                className="h-7 w-7 px-0 text-muted-foreground hover:text-destructive shadow-none"
                 onClick={() => handleRemoveUser(index)}
+                title="删除屏蔽用户"
+                aria-label="删除屏蔽用户"
               >
-                <X className="h-4 w-4" />
+                <RemoveCircleIcon className="!size-5" />
               </Button>
             </div>
           ))
@@ -58,7 +75,9 @@ export function BlocklistManager() {
           onChange={e => setNewUser(e.target.value)}
           className="flex-1"
         />
-        <Button onClick={handleAddUser}>添加</Button>
+        <Button variant="outline" size="sm" onClick={handleAddUser}>
+          添加
+        </Button>
       </div>
     </div>
   )

@@ -59,6 +59,18 @@ export async function connect(
   },
 ) {
   await softGoto(page, loginConstants.liveControlUrl)
+
+  // softGoto 后可能已落到登录页 / 中控台，先快速判定，避免无谓空等
+  if (loginConstants.loginUrlRegex.test(page.url())) {
+    return false
+  }
+  try {
+    const hit = await page.$(loginConstants.isInLiveControlSelector)
+    if (hit) return true
+  } catch {
+    // 页面可能仍在跳转，继续走下方等待
+  }
+
   try {
     await Promise.race([
       page.waitForURL(loginConstants.loginUrlRegex, {
@@ -71,8 +83,18 @@ export async function connect(
         state: 'attached',
       }),
     ])
-  } catch {
+  } catch (err) {
     const where = await describeConnectPage(page)
+    // 等待过程中若已跳到登录页，交给上层走扫码，而不是当成硬失败
+    if (loginConstants.loginUrlRegex.test(page.url())) {
+      return false
+    }
+    const reason = err instanceof Error ? err.message.split('\n')[0].trim() : String(err)
+    if (/closed|Target page|browser has been closed/i.test(reason)) {
+      throw new Error(
+        `打开中控台失败：浏览器或页面已关闭 → ${where}。请关闭无头模式后重试，并确认弹出的 Chrome 未被关掉`,
+      )
+    }
     throw new Error(
       `打开中控台超时：当前页面未识别为登录页或直播控制台 → ${where}。请确认平台选择正确、网络正常；若为白屏/验证码/异常页，可在设置中清除该账号登录状态后重试`,
     )
@@ -523,8 +545,92 @@ export async function getAllGoodsIdsFromScroller(
 }
 
 const TOGGLE_BUTTON_MAX_TRY_COUNT = 5
-export async function toggleButton(
+
+export type ToggleButtonResolver = () => Result.ResultAsync<
+  ElementHandle<SVGElement | HTMLElement>,
+  Error
+>
+
+function isDetachedElementError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error)
+  return /not attached to the DOM|Target closed|Execution context was destroyed/i.test(msg)
+}
+
+function toDetachedButtonError() {
+  return new ElementNotFoundError({ elementName: '讲解按钮' })
+}
+
+async function resolveToggleButton(
+  buttonOrResolve: ElementHandle<SVGElement | HTMLElement> | ToggleButtonResolver,
+): Result.ResultAsync<ElementHandle<SVGElement | HTMLElement>, Error> {
+  if (typeof buttonOrResolve === 'function') {
+    return buttonOrResolve()
+  }
+  return Result.succeed(buttonOrResolve)
+}
+
+/** 读取按钮文案；节点已被虚拟列表替换时转为可重试错误，避免抛到 IntervalTask 直接停任务 */
+async function readToggleButtonText(
   button: ElementHandle<SVGElement | HTMLElement>,
+): Result.ResultAsync<string, Error> {
+  try {
+    const text = await button.evaluate(el => {
+      if (!el.isConnected) return null
+      return (el.textContent ?? '').trim()
+    })
+    if (text === null) return Result.fail(toDetachedButtonError())
+    return Result.succeed(text)
+  } catch (error) {
+    if (isDetachedElementError(error)) return Result.fail(toDetachedButtonError())
+    throw error
+  }
+}
+
+/**
+ * 检查讲解按钮是否不可点。
+ * 用 evaluate 一次读完，避免 isDisabled 在节点刚刷新时抛「Element is not attached」。
+ */
+async function readToggleButtonDisabled(
+  button: ElementHandle<SVGElement | HTMLElement>,
+): Result.ResultAsync<boolean, Error> {
+  try {
+    const disabled = await button.evaluate(el => {
+      if (!el.isConnected) return null
+      if (el instanceof HTMLButtonElement || el instanceof HTMLInputElement) {
+        if (el.disabled) return true
+      }
+      const aria = el.getAttribute('aria-disabled')
+      if (aria === 'true') return true
+      const className = typeof el.className === 'string' ? el.className : String(el.className ?? '')
+      return /disabled|disable/i.test(className)
+    })
+    if (disabled === null) return Result.fail(toDetachedButtonError())
+    return Result.succeed(disabled)
+  } catch (error) {
+    if (isDetachedElementError(error)) return Result.fail(toDetachedButtonError())
+    throw error
+  }
+}
+
+async function clickToggleButton(
+  button: ElementHandle<SVGElement | HTMLElement>,
+): Result.ResultAsync<void, Error> {
+  try {
+    // button.click() 在抖店&百应的表现很诡异，所以用 dispatchEvent('click')
+    await button.dispatchEvent('click')
+    return Result.succeed()
+  } catch (error) {
+    if (isDetachedElementError(error)) return Result.fail(toDetachedButtonError())
+    throw error
+  }
+}
+
+/**
+ * 切换讲解按钮（未讲解 ↔ 讲解中）。
+ * 可传入每次重试时重新查找按钮的函数，避免虚拟列表重渲染后 ElementHandle 失效。
+ */
+export async function toggleButton(
+  buttonOrResolve: ElementHandle<SVGElement | HTMLElement> | ToggleButtonResolver,
   sourceContent: string,
   targetContent: string,
   signal?: AbortSignal,
@@ -538,7 +644,15 @@ export async function toggleButton(
       }),
     )
   }
-  const buttonText = (await button.textContent())?.trim() || ''
+
+  const buttonResult = await resolveToggleButton(buttonOrResolve)
+  if (Result.isFailure(buttonResult)) return buttonResult
+  const button = buttonResult.value
+
+  const textResult = await readToggleButtonText(button)
+  if (Result.isFailure(textResult)) return textResult
+  const buttonText = textResult.value
+
   if (buttonText !== sourceContent && buttonText !== targetContent) {
     return Result.fail(
       new ElementContentMismatchedError({
@@ -554,19 +668,32 @@ export async function toggleButton(
   if (buttonText === targetContent && tryCount > 0) {
     return Result.succeed()
   }
-  if (await button.isDisabled()) {
+
+  const disabledResult = await readToggleButtonDisabled(button)
+  if (Result.isFailure(disabledResult)) return disabledResult
+  if (disabledResult.value) {
+    let elementHtml = ''
+    try {
+      elementHtml = await button.evaluate(el => el.outerHTML)
+    } catch {
+      elementHtml = ''
+    }
     return Result.fail(
       new ElementDisabledError({
         elementName: '讲解按钮',
-        element: await button.evaluate(el => el.outerHTML),
+        element: elementHtml,
       }),
     )
   }
-  // button.click() 在抖店&百应的表现很诡异，所以用 dispatchEvent('click')
-  await button.dispatchEvent('click')
+
+  const clickResult = await clickToggleButton(button)
+  if (Result.isFailure(clickResult)) return clickResult
+
   return Result.pipe(
     abortableSleep(1000, signal),
-    Result.andThen(() => toggleButton(button, sourceContent, targetContent, signal, tryCount + 1)),
+    Result.andThen(() =>
+      toggleButton(buttonOrResolve, sourceContent, targetContent, signal, tryCount + 1),
+    ),
   )
 }
 

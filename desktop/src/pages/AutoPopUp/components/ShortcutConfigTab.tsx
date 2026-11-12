@@ -10,8 +10,16 @@ import ShortcutListItem from './ShortcutListItem'
 const ShortcutConfigTab = React.memo(() => {
   const shortcuts = useCurrentAutoPopUp(context => context.shortcuts ?? [])
   const isGlobalShortcut = useCurrentAutoPopUp(ctx => ctx.isGlobalShortcut)
-  const { setGlobalShortcut } = useAutoPopUpActions()
+  const { setGlobalShortcut, setShortcuts } = useAutoPopUpActions()
   const [isAddingNew, setIsAddingNew] = useState(false)
+
+  const moveShortcut = useMemoizedFn((index: number, direction: -1 | 1) => {
+    const target = index + direction
+    if (target < 0 || target >= shortcuts.length) return
+    const next = [...shortcuts]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    setShortcuts(next)
+  })
 
   // 检查快捷键是否重复
   const checkDuplicateKey = useCallback(
@@ -47,8 +55,8 @@ const ShortcutConfigTab = React.memo(() => {
           <Label>快捷键映射</Label>
           <p className="text-sm text-muted-foreground">配置快捷键以快速切换商品列表</p>
         </div>
-        <Button variant="outline" size="sm" onClick={addNewShortcut} disabled={isAddingNew}>
-          <PlusIcon className="mr-2 h-4 w-4" />
+        <Button size="sm" onClick={addNewShortcut} disabled={isAddingNew} title="添加快捷键">
+          <PlusIcon className="mr-0 h-4 w-4" />
           添加快捷键
         </Button>
       </div>
@@ -72,11 +80,15 @@ const ShortcutConfigTab = React.memo(() => {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3">
-            {shortcuts.map((shortcut, _index) => (
+            {shortcuts.map((shortcut, index) => (
               <ShortcutListItem
                 key={`shortcut-${shortcut.id}`}
                 shortcut={shortcut}
                 checkDuplicateKey={key => checkDuplicateKey(key, shortcut.id)}
+                canMoveUp={index > 0}
+                canMoveDown={index < shortcuts.length - 1}
+                onMoveUp={() => moveShortcut(index, -1)}
+                onMoveDown={() => moveShortcut(index, 1)}
               />
             ))}
           </div>

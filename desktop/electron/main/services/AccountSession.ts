@@ -38,6 +38,7 @@ import { createCommentListenerTask } from '#/tasks/CommentListenerTask'
 import type { ITask } from '#/tasks/ITask'
 import { TaskStopReason } from '#/tasks/ITask'
 import { createSendBatchMessageTask } from '#/tasks/SendBatchMessageTask'
+import { isTransientCommentError, runUntilNotTransient } from '#/tasks/transientControl'
 import windowManager from '#/windowManager'
 
 /** L2 解析失败后的重试间隔（有互动号时） */
@@ -574,6 +575,7 @@ export class AccountSession {
   /**
    * 发送单条公屏评论（自动回复等）。
    * 与任务型 send-batch 分离，并按账号串行，避免连发互相掐断且能如实回传成败。
+   * 评论区被挡住等暂时失败时等待恢复再发，不直接放弃（全平台）。
    */
   public async performCommentOnce(message: string): Result.ResultAsync<boolean, Error> {
     if (!message.trim()) {
@@ -589,14 +591,24 @@ export class AccountSession {
     }
     const platform = this.platform
     const accountId = this.account.id
-    const run = async (): Promise<Result.Result<boolean, Error>> => {
-      rememberOutboundComment(accountId, message)
-      const result = await platform.performComment(message)
-      if (Result.isFailure(result)) {
-        forgetOutboundComment(accountId, message)
-      }
-      return result
-    }
+    const replyLogger = this.logger.scope('自动回复')
+    const run = async (): Promise<Result.Result<boolean, Error>> =>
+      runUntilNotTransient(
+        async () => {
+          rememberOutboundComment(accountId, message)
+          const result = await platform.performComment(message)
+          if (Result.isFailure(result)) {
+            forgetOutboundComment(accountId, message)
+          }
+          return result
+        },
+        {
+          isTransient: isTransientCommentError,
+          onWaiting: err =>
+            replyLogger.warn(`暂时无法回复（${err.message}），等待恢复后继续；监听不停止`),
+          onResumed: () => replyLogger.info('评论区已恢复，继续发送回复'),
+        },
+      )
     const done = this.commentSendChain.then(run, run)
     this.commentSendChain = done.then(
       () => undefined,

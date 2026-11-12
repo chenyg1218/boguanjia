@@ -10,13 +10,14 @@ export const URLS = {
 } as const
 
 export const REGEXPS = {
-  // 旧链路落到 douyinec；现网常见 buyin 自有登录页，二者都视为需登录
-  LOGIN_PAGE: /douyinec\.com|buyin\.jinritemai\.com\/mpa\/account\/login/,
+  // 旧链路 douyinec；现网：login / roles-select 等 /mpa/account/ 下页面均视为需登录
+  LOGIN_PAGE: /douyinec\.com|buyin\.jinritemai\.com\/mpa\/account\//,
 }
 
 export const SELECTORS = {
   ...DY_SELECTORS,
   LOGGED_IN: '[class^="header"]',
-  IN_LIVE_CONTROL: '[class^="goodsPanel"]',
+  // 与抖店停播检测对齐：class 哈希前缀会变，改用包含匹配 + 商品列表容器
+  IN_LIVE_CONTROL: '#live-control-goods-list-container, [class*="goodsPanel"]',
   ACCOUNT_NAME: 'span.btn-item-role-exchange-name__title',
 } as const

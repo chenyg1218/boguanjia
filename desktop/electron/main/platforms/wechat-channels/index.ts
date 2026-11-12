@@ -142,11 +142,16 @@ export class WechatChannelPlatform
   async performPopup(id: number, signal?: AbortSignal) {
     const page = await this.ensureProductsPage()
     if (Result.isFailure(page)) return page
-    return Result.pipe(
-      Result.succeed(page.value),
-      Result.andThen(current => getItemFromVirtualScroller(current, elementFinder, id)),
-      Result.andThen(item => elementFinder.getPopUpButtonFromGoodsItem(item)),
-      Result.andThen(btn => toggleButton(btn, TEXT.POPUP_BUTTON, TEXT.POPUP_BUTTON_CANCLE, signal)),
+    const current = page.value
+    return toggleButton(
+      () =>
+        Result.pipe(
+          getItemFromVirtualScroller(current, elementFinder, id),
+          Result.andThen(item => elementFinder.getPopUpButtonFromGoodsItem(item)),
+        ),
+      TEXT.POPUP_BUTTON,
+      TEXT.POPUP_BUTTON_CANCLE,
+      signal,
     )
   }
 

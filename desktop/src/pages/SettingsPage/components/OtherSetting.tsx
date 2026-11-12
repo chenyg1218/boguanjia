@@ -1,7 +1,8 @@
-import { BookOpenIcon, CopyIcon, FileTextIcon, Trash2Icon } from 'lucide-react'
+import { BookOpenIcon, CopyIcon, FileTextIcon, Trash } from 'lucide-react'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/useToast'
 import { performFullCleanup } from '@/utils/storage'
 import { openTutorial } from '@/utils/tutorial'
@@ -40,15 +41,16 @@ export function OtherSetting() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>其他设置</CardTitle>
-        <CardDescription>教程、联系作者、日志</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
+      <CardContent className="pt-6">
+        <div className="space-y-6">
+          <div className="space-y-1">
+            <Label>其他设置</Label>
+            <p className="text-sm text-muted-foreground">教程、联系作者、日志</p>
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
             <div className="space-y-1">
-              <h4 className="text-sm font-medium leading-none">使用教程</h4>
+              <Label>使用教程</Label>
               <p className="text-sm text-muted-foreground">
                 安装、连接中控台、自动发言 / 弹窗 / 回复等完整说明
               </p>
@@ -56,56 +58,64 @@ export function OtherSetting() {
             <Button
               variant="outline"
               size="sm"
-              className="gap-2"
+              className="shrink-0"
               onClick={() => void openTutorial()}
             >
-              <BookOpenIcon className="h-4 w-4" />
+              <BookOpenIcon className="mr-0 h-4 w-4" />
               查看教程
             </Button>
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <h4 className="text-sm font-medium leading-none">关于播管家</h4>
-              <p className="text-sm text-muted-foreground">
-                多平台直播跟播辅助 · 基础版 单平台 · 1个账号 / 专业版月卡 单平台 · 3个账号 / 旗舰版月卡无上限
-              </p>
-            </div>
+          <div className="space-y-1">
+            <Label>关于播管家</Label>
+            <p className="text-sm text-muted-foreground">
+              连接各平台官方中控台，帮你自动发言、弹商品、回评论
+            </p>
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div className="space-y-1">
-              <h4 className="text-sm font-medium leading-none">联系作者</h4>
+              <Label>联系作者</Label>
               <p className="text-sm text-muted-foreground">
                 问题反馈、功能建议 · 微信 {AUTHOR_WECHAT_ID}
               </p>
             </div>
-            <Button variant="outline" size="sm" className="gap-2" onClick={handleCopyWechat}>
-              <CopyIcon className="h-4 w-4" />
+            <Button variant="outline" size="sm" className="shrink-0" onClick={handleCopyWechat}>
+              <CopyIcon className="mr-0 h-4 w-4" />
               复制微信号
             </Button>
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div className="space-y-1">
-              <h4 className="text-sm font-medium leading-none">运行日志</h4>
+              <Label>运行日志</Label>
               <p className="text-sm text-muted-foreground">
                 查看本机运行日志（文件名 main.log）
               </p>
             </div>
-            <Button variant="outline" size="sm" className="gap-2" onClick={handleOpenLogFolder}>
-              <FileTextIcon className="h-4 w-4" />
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={handleOpenLogFolder}
+            >
+              <FileTextIcon className="mr-0 h-4 w-4" />
               打开日志文件夹
             </Button>
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div className="space-y-1">
-              <h4 className="text-sm font-medium leading-none">清理无效数据</h4>
+              <Label>清理无效数据</Label>
               <p className="text-sm text-muted-foreground">清理废弃的存储数据和孤立的账号数据</p>
             </div>
-            <Button variant="outline" size="sm" className="gap-2" onClick={handleCleanupStorage}>
-              <Trash2Icon className="h-4 w-4" />
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={handleCleanupStorage}
+            >
+              <Trash className="mr-0 h-4 w-4" />
               清理无效数据
             </Button>
           </div>

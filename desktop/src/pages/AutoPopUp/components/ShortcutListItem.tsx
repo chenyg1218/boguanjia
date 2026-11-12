@@ -1,7 +1,9 @@
 import { useMemoizedFn } from 'ahooks'
-import { ArrowBigRightDash, Edit2Icon, Save, Trash2Icon, X } from 'lucide-react'
+import { ArrowBigRightDash, Pencil, Save, X } from 'lucide-react'
 import type React from 'react'
 import { useState } from 'react'
+import { MoveItemButtons } from '@/components/common/MoveItemButtons'
+import { RemoveCircleIcon } from '@/components/icons/RemoveCircleIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +18,10 @@ interface ShortcutListItemProps {
   checkDuplicateKey: (key: string) => boolean
   onSaved?: () => void
   onCancelled?: () => void
+  canMoveUp?: boolean
+  canMoveDown?: boolean
+  onMoveUp?: () => void
+  onMoveDown?: () => void
 }
 
 const PLATFORM_KEY_MAP = {
@@ -37,6 +43,10 @@ const ShortcutListItem: React.FC<ShortcutListItemProps> = ({
   checkDuplicateKey,
   onSaved,
   onCancelled,
+  canMoveUp = false,
+  canMoveDown = false,
+  onMoveUp,
+  onMoveDown,
 }) => {
   const { addShortcut, removeShortcut, updateShortcut } = useAutoPopUpActions()
   const [isEditing, setIsEditing] = useState(isNew) // 如果是新建，直接进入编辑模式
@@ -153,15 +163,24 @@ const ShortcutListItem: React.FC<ShortcutListItemProps> = ({
     setNewGoodsIdInput('')
   })
 
-  // 删除商品ID
-  const removeGoodsId = useMemoizedFn((goodsIdToRemove: number) => {
+  // 删除商品ID（第一项不可删）
+  const removeGoodsId = useMemoizedFn((goodsIdToRemove: number, index: number) => {
+    if (index === 0) return
     setNewGoodsIds(newGoodsIds.filter(id => id !== goodsIdToRemove))
+  })
+
+  const moveGoodsId = useMemoizedFn((index: number, direction: -1 | 1) => {
+    const target = index + direction
+    if (target < 0 || target >= newGoodsIds.length) return
+    const next = [...newGoodsIds]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    setNewGoodsIds(next)
   })
 
   // 渲染查看模式
   if (!isEditing) {
     return (
-      <div className="border rounded-md p-3 shadow-sm hover:shadow transition-shadow">
+      <div className="group border rounded-md p-3 shadow-sm hover:shadow transition-shadow">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="flex gap-2 items-center">
@@ -201,17 +220,31 @@ const ShortcutListItem: React.FC<ShortcutListItemProps> = ({
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <Button variant="ghost" size="sm" onClick={startEditing} title="编辑此快捷键映射">
-              <Edit2Icon className="h-4 w-4" />
+            <MoveItemButtons
+              canMoveUp={canMoveUp}
+              canMoveDown={canMoveDown}
+              onMoveUp={() => onMoveUp?.()}
+              onMoveDown={() => onMoveDown?.()}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 px-0 text-muted-foreground shadow-none"
+              onClick={startEditing}
+              title="编辑此快捷键映射"
+              aria-label="编辑此快捷键映射"
+            >
+              <Pencil className="!size-3.5" />
             </Button>
             <Button
               variant="ghost"
               size="sm"
+              className="h-7 w-7 px-0 text-muted-foreground hover:text-destructive shadow-none"
               onClick={deleteShortcut}
-              className="text-destructive"
               title="删除此快捷键映射"
+              aria-label="删除此快捷键映射"
             >
-              <Trash2Icon className="h-4 w-4" />
+              <RemoveCircleIcon className="!size-5" />
             </Button>
           </div>
         </div>
@@ -263,20 +296,30 @@ const ShortcutListItem: React.FC<ShortcutListItemProps> = ({
       <div className="space-y-3">
         <div className="text-sm font-medium">商品列表</div>
         <div className="flex flex-wrap gap-2 mb-3">
-          {newGoodsIds.map(goodsId => (
+          {newGoodsIds.map((goodsId, index) => (
             <div
               key={`edit-${goodsId}`}
               className="flex items-center space-x-1 bg-muted rounded-md px-2 py-1 group"
             >
               <span className="text-sm">{goodsId}</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-5 w-5 opacity-60 group-hover:opacity-100"
-                onClick={() => removeGoodsId(goodsId)}
-              >
-                <Trash2Icon className="h-3 w-3" />
-              </Button>
+              <MoveItemButtons
+                canMoveUp={index > 0}
+                canMoveDown={index < newGoodsIds.length - 1}
+                onMoveUp={() => moveGoodsId(index, -1)}
+                onMoveDown={() => moveGoodsId(index, 1)}
+              />
+              {index > 0 ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 px-0 text-muted-foreground hover:text-destructive shadow-none"
+                  onClick={() => removeGoodsId(goodsId, index)}
+                  title="删除商品"
+                  aria-label="删除商品"
+                >
+                  <RemoveCircleIcon className="!size-4" />
+                </Button>
+              ) : null}
             </div>
           ))}
           {newGoodsIds.length === 0 && (
@@ -304,11 +347,11 @@ const ShortcutListItem: React.FC<ShortcutListItemProps> = ({
             </Button>
           </div>
           <div className="flex items-center space-x-2">
-            <Button variant="ghost" size="sm" onClick={cancelEditing} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={cancelEditing} className="gap-1.5">
               <X className="h-4 w-4" />
               取消
             </Button>
-            <Button variant="outline" size="sm" onClick={saveEditing} className="gap-1.5">
+            <Button size="sm" onClick={saveEditing} className="gap-1.5">
               <Save className="h-4 w-4" />
               保存
             </Button>

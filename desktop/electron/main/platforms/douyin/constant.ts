@@ -21,11 +21,13 @@ export const REGEXPS = {
 
 export const SELECTORS = {
   LOGGED_IN: `[class^="index_userName"]`,
-  IN_LIVE_CONTROL: `[class^="goodsPanel"]`,
+  IN_LIVE_CONTROL: `#live-control-goods-list-container, [class*="goodsPanel"]`,
   ACCOUNT_NAME: `[class^="index_userName"]`,
 
   GOODS_ITEM: 'div[class^="goodsItem"]',
   GOODS_ITEMS_WRAPPER: '#live-control-goods-list-container div',
+  /** 商品列表根节点（检测福袋等面板是否遮挡） */
+  GOODS_LIST_ROOT: '#live-control-goods-list-container, [class*="goodsPanel"]',
 
   goodsItem: {
     ACTION: 'div[class^="goodsAction"]',
@@ -38,6 +40,8 @@ export const SELECTORS = {
     SUBMIT_BUTTON_DISABLED: 'isDisabled',
     /** 置顶的勾选框 */
     PIN_TOP_LABEL: '#input-comment-block-id label',
+    /** 评论区根节点（检测面板是否遮挡） */
+    ROOT: '#input-comment-block-id',
   },
   overlays: {
     /** 长时间不操作弹窗的关闭按钮 */

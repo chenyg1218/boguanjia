@@ -1,5 +1,6 @@
 import { Result } from '@praha/byethrow'
 import type { Page } from 'playwright'
+import { CommentAreaBlockedError, GoodsListBlockedError } from '#/errors/PlatformError'
 import type { BrowserSession } from '#/managers/BrowserSessionManager'
 import {
   comment,
@@ -11,6 +12,7 @@ import {
   toggleButton,
 } from '../helper'
 import type { ILiveEndedWatch, IPerformComment, IPerformPopup, IPlatform } from '../IPlatform'
+import { isCommentAreaBlocked, isGoodsListBlocked } from '../douyin/overlays'
 import { REGEXPS, SELECTORS, TEXTS, URLS } from './constant'
 import { douyinEosElementFinder as elementFinder } from './element-finder'
 import { DouyinEosLiveEndedWatcher } from './liveEndedWatcher'
@@ -61,18 +63,39 @@ export class DouyinEosPlatform implements IPlatform, IPerformPopup, IPerformComm
   async performPopup(id: number, signal?: AbortSignal) {
     return Result.pipe(
       ensurePage(this.mainPage),
-      Result.andThen(page => getItemFromVirtualScroller(page, elementFinder, id)),
-      Result.andThen(item => elementFinder.getPopUpButtonFromGoodsItem(item)),
-      Result.andThen(popupBtn =>
-        toggleButton(popupBtn, TEXTS.POPUP_BUTTON, TEXTS.POPUP_BUTTON_CANCLE, signal),
-      ),
+      Result.andThen(async page => {
+        // 面板盖住时仍直接走 DOM（dispatchEvent），不要求视觉可点
+        const result = await toggleButton(
+          () =>
+            Result.pipe(
+              getItemFromVirtualScroller(page, elementFinder, id),
+              Result.andThen(item => elementFinder.getPopUpButtonFromGoodsItem(item)),
+            ),
+          TEXTS.POPUP_BUTTON,
+          TEXTS.POPUP_BUTTON_CANCLE,
+          signal,
+        )
+        if (Result.isFailure(result) && (await isGoodsListBlocked(page, SELECTORS.GOODS_LIST_ROOT))) {
+          return Result.fail(new GoodsListBlockedError())
+        }
+        return result
+      }),
     )
   }
 
   async performComment(message: string) {
     return Result.pipe(
       ensurePage(this.mainPage),
-      Result.andThen(page => comment(page, elementFinder, message, false)),
+      Result.andThen(async page => {
+        const result = await comment(page, elementFinder, message, false)
+        if (
+          Result.isFailure(result) &&
+          (await isCommentAreaBlocked(page, SELECTORS.commentInput.ROOT))
+        ) {
+          return Result.fail(new CommentAreaBlockedError())
+        }
+        return result
+      }),
     )
   }
 

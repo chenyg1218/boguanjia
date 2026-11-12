@@ -10,6 +10,7 @@ import { insertRandomSpaces, randomInt, replaceVariant, takeScreenshot } from '#
 import windowManager from '#/windowManager'
 import { createIntervalTask } from './IntervalTask'
 import { runWithRetry } from './retry'
+import { isTransientCommentError, runUntilNotTransient } from './transientControl'
 
 const TASK_NAME = '自动发言'
 
@@ -92,38 +93,57 @@ export function createAutoCommentTask(
   }
 
   async function execute(signal: AbortSignal) {
-    const result = await runWithRetry(
-      async () => {
-        if (signal.aborted) {
-          return Result.fail(new AbortError())
-        }
-        const message = getNextMessage()
-        // 替换变量
-        let content = replaceVariant(message.content)
-        // 添加随机空格
-        if (config.extraSpaces) {
-          content = insertRandomSpaces(content)
-        }
-        // 发送前登记；失败则撤回，避免误伤同文案观众评论
-        rememberOutboundComment(account.id, content)
-        const pinTop = await platform.performComment(content, message.pinTop)
-        if (Result.isFailure(pinTop)) {
-          forgetOutboundComment(account.id, content)
-          return pinTop
-        }
-        logger.success(`发送${pinTop.value ? '「置顶」' : ''}消息: ${content}`)
-        return Result.succeed()
-      },
+    const message = getNextMessage()
+    // 替换变量
+    let content = replaceVariant(message.content)
+    // 添加随机空格
+    if (config.extraSpaces) {
+      content = insertRandomSpaces(content)
+    }
+
+    // 全平台：评论区被挡住等暂时失败时等待恢复，不停任务、不换下一条
+    let pinTopFlag = false
+    const result = await runUntilNotTransient(
+      () =>
+        runWithRetry(
+          async () => {
+            if (signal.aborted) {
+              return Result.fail(new AbortError())
+            }
+            // 发送前登记；失败则撤回，避免误伤同文案观众评论
+            rememberOutboundComment(account.id, content)
+            const pinTop = await platform.performComment(content, message.pinTop)
+            if (Result.isFailure(pinTop)) {
+              forgetOutboundComment(account.id, content)
+              return pinTop
+            }
+            pinTopFlag = pinTop.value
+            return Result.succeed()
+          },
+          {
+            ...retryOptions,
+            logger,
+            signal,
+            shouldRetry: err => !isTransientCommentError(err),
+            onRetryError: err => {
+              if (isTransientCommentError(err)) return
+              const page = platform.getCommentPage()
+              if (page) takeScreenshot(page, TASK_NAME, account.name)
+            },
+          },
+        ),
       {
-        ...retryOptions,
-        logger,
+        isTransient: isTransientCommentError,
         signal,
-        onRetryError: () => {
-          const page = platform.getCommentPage()
-          if (page) takeScreenshot(page, TASK_NAME, account.name)
-        },
+        onWaiting: err =>
+          logger.warn(`暂时无法发言（${err.message}），等待恢复后继续；任务不停止`),
+        onResumed: () => logger.info('评论区已恢复，继续自动发言'),
       },
     )
+
+    if (Result.isSuccess(result)) {
+      logger.success(`发送${pinTopFlag ? '「置顶」' : ''}消息: ${content}`)
+    }
     return result
   }
 

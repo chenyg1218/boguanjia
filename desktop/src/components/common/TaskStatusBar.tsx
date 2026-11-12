@@ -4,6 +4,8 @@ import { useCurrentAutoMessage } from '@/hooks/useAutoMessage'
 import { useAutoReply } from '@/hooks/useAutoReply'
 import { useCurrentAutoPopUp } from '@/hooks/useAutoPopUp'
 import { useCurrentLiveControl } from '@/hooks/useLiveControl'
+// 暂隐：直播话术
+// import { useCurrentVoiceBroadcast } from '@/hooks/useVoiceBroadcast'
 import { useViewerAccountsStore } from '@/hooks/useViewerAccounts'
 import { cn } from '@/lib/utils'
 
@@ -60,6 +62,8 @@ export function TaskStatusBar() {
   const messageRunning = useCurrentAutoMessage(c => c.isRunning)
   const popupRunning = useCurrentAutoPopUp(c => c.isRunning)
   const { isRunning: replyRunning, isListening } = useAutoReply()
+  // 暂隐：直播话术
+  // const voiceStatus = useCurrentVoiceBroadcast(c => c.status)
   const viewerDanmakuRunning = useViewerAccountsStore(s =>
     Object.values(s.runtime).some(r => r.isRunning),
   )
@@ -99,13 +103,26 @@ export function TaskStatusBar() {
           to="/auto-popup"
         />
         <StatusChip label="自动回复" {...replyChip} to="/auto-reply" />
+        {/* 暂隐：直播话术
+        <StatusChip
+          label="直播话术"
+          value={
+            voiceStatus.running
+              ? voiceStatus.paused
+                ? '已暂停'
+                : '读稿中'
+              : '未运行'
+          }
+          tone={voiceStatus.running ? (voiceStatus.paused ? 'warn' : 'ok') : 'muted'}
+          to="/live-script"
+        />
+        */}
         <StatusChip
           label="小号互动"
           value={viewerDanmakuRunning ? '运行中' : '未运行'}
           tone={viewerDanmakuRunning ? 'ok' : 'muted'}
           to="/viewer-danmaku"
         />
-        {/* v1.2 暂缓：直播话术状态 */}
       </div>
     </div>
   )

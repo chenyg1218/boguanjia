@@ -6,7 +6,7 @@ import { immer } from 'zustand/middleware/immer'
 import { AUTO_REPLY } from '@/constants'
 import { replaceUsername } from '@/utils/autoReplyText'
 import { EVENTS, eventEmitter } from '@/utils/events'
-import { matchKeywordRuleWithIndex, type KeywordReplyChannel } from '@/utils/keywordRules'
+import { matchKeywordRuleWithIndex } from '@/utils/keywordRules'
 import { mergeWithoutArray } from '@/utils/misc'
 import { useAccounts } from './useAccounts'
 import type { ChatMessage } from './useAIChat'
@@ -19,8 +19,6 @@ import {
 } from './useAutoReplyConfig'
 import { useErrorHandler } from './useErrorHandler'
 import { useCurrentLiveControl, useLiveControlStore } from './useLiveControl'
-// v1.2 暂缓：语音读稿
-// import { useVoiceBroadcastStore } from './useVoiceBroadcast'
 
 interface ReplyPreview {
   id: string
@@ -277,20 +275,8 @@ function markRuleCooldown(accountId: string, ruleIndex: number, cooldownSec: num
   keywordCooldownUntil.set(`${accountId}:${ruleIndex}`, Date.now() + sec * 1000)
 }
 
-async function dispatchOutput(
-  accountId: string,
-  text: string,
-  _channel: KeywordReplyChannel,
-  errorHandler: ReturnType<typeof useErrorHandler>['handleError'],
-): Promise<boolean> {
-  // v1.1.3：仅公屏文字；语音通道暂缓
-  if (!text) return false
-  return sendMessage(accountId, text, errorHandler)
-  // if ((channel === 'voice' || channel === 'both') && text) { speakOnce... }
-}
-
 /**
- * 关键词回复：匹配模式 + 多回复随机（冷却保留；读稿/弹窗三联暂缓）
+ * 关键词回复：匹配模式 + 多回复随机（仅公屏）
  * @returns 是否已处理完毕（冷却中 / 发送成功）。发送失败返回 false，交给 AI 兜底。
  */
 const handleKeywordTriple = async (
@@ -319,12 +305,6 @@ const handleKeywordTriple = async (
     return true
   }
 
-  // v1.2 暂缓：关键词弹指定商品
-  // if (rule.goodsId && rule.goodsId > 0) {
-  //   void window.ipcRenderer.invoke(IPC_CHANNELS.tasks.autoPopUp.popupOnce, accountId, rule.goodsId)
-  // }
-
-  const channel: KeywordReplyChannel = 'comment'
   const raw = getRandomElement(rule.contents)
   const message = raw
     ? replaceUsername(raw, comment.nick_name, config.hideUsername)
@@ -333,7 +313,7 @@ const handleKeywordTriple = async (
   if (!message) return false
 
   useAutoReplyStore.getState().addReply(accountId, comment.msg_id, comment.nick_name, message)
-  const sent = await dispatchOutput(accountId, message, channel, errorHandler)
+  const sent = await sendMessage(accountId, message, errorHandler)
   if (sent) {
     useAutoReplyStore.getState().markReplySent(accountId, comment.msg_id)
     markRuleCooldown(accountId, index, cooldownSec)
@@ -405,8 +385,7 @@ const handleAIReply = async (
       onReply(replyContent)
       // 自动发送
       if (autoSend) {
-        const channel: KeywordReplyChannel = 'comment'
-        const sent = await dispatchOutput(accountId, replyContent, channel, errorHandler)
+        const sent = await sendMessage(accountId, replyContent, errorHandler)
         if (sent) {
           useAutoReplyStore.getState().markReplySent(accountId, comment.msg_id)
         }

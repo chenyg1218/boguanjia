@@ -47,10 +47,26 @@ export class ElementDisabledError extends ErrorFactory({
   }>(),
 }) {}
 
+/** 面板导致商品列表暂时不可用：等待后重试当前讲解，任务不停止 */
+export class GoodsListBlockedError extends ErrorFactory({
+  name: 'GoodsListBlockedError',
+  message:
+    '商品列表暂时不可用（可能被福袋、秒杀等面板挡住或替换），等待恢复后继续讲解',
+}) {}
+
+/** 面板导致评论区暂时不可用：等待后重试当前发言，任务不停止 */
+export class CommentAreaBlockedError extends ErrorFactory({
+  name: 'CommentAreaBlockedError',
+  message:
+    '评论区暂时不可用（可能被福袋、秒杀等面板挡住或替换），等待恢复后继续发言',
+}) {}
+
 export type PlatformError =
   | ElementNotFoundError
   | ElementDisabledError
   | MaxTryCountExceededError
   | ElementContentMismatchedError
   | PageNotFoundError
+  | GoodsListBlockedError
+  | CommentAreaBlockedError
   | UnexpectedError

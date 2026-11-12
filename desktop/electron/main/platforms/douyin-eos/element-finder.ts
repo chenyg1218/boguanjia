@@ -31,7 +31,17 @@ export const douyinEosElementFinder: IElementFinder = {
   },
 
   async getPopUpButtonFromGoodsItem(item: ElementHandle<SVGElement | HTMLElement>) {
-    const button = await item.$(SELECTORS.goodsItem.POPUP_BUTTON)
+    let button: ElementHandle<SVGElement | HTMLElement> | null
+    try {
+      button = await item.$(SELECTORS.goodsItem.POPUP_BUTTON)
+    } catch {
+      return Result.fail(
+        new ElementNotFoundError({
+          elementName: '讲解按钮',
+          selector: SELECTORS.goodsItem.POPUP_BUTTON,
+        }),
+      )
+    }
     if (!button) {
       return Result.fail(
         new ElementNotFoundError({
@@ -40,11 +50,37 @@ export const douyinEosElementFinder: IElementFinder = {
         }),
       )
     }
-    if (await button.evaluate(el => el.className.includes('disabled'))) {
+    try {
+      const state = await button.evaluate(el => {
+        if (!el.isConnected) return { attached: false as const }
+        const className = typeof el.className === 'string' ? el.className : String(el.className ?? '')
+        return {
+          attached: true as const,
+          disabled: className.includes('disabled'),
+          html: el.outerHTML,
+        }
+      })
+      if (!state.attached) {
+        return Result.fail(
+          new ElementNotFoundError({
+            elementName: '讲解按钮',
+            selector: SELECTORS.goodsItem.POPUP_BUTTON,
+          }),
+        )
+      }
+      if (state.disabled) {
+        return Result.fail(
+          new ElementDisabledError({
+            elementName: '讲解按钮',
+            element: state.html,
+          }),
+        )
+      }
+    } catch {
       return Result.fail(
-        new ElementDisabledError({
+        new ElementNotFoundError({
           elementName: '讲解按钮',
-          element: await button.evaluate(el => el.outerHTML),
+          selector: SELECTORS.goodsItem.POPUP_BUTTON,
         }),
       )
     }

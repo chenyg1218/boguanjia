@@ -55,7 +55,6 @@ export function AIReplySetting() {
             </div>
           </div>
         )}
-        {/* v1.2 暂缓：自动发送通道（语音读稿） */}
       </div>
       {aiReplyEnabled && (
         <div className="space-y-4">

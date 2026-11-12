@@ -1,10 +1,13 @@
 import { useMemoizedFn } from 'ahooks'
-import { Plus, Trash, X } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { MoveItemButtons } from '@/components/common/MoveItemButtons'
+import { RemoveCircleIcon } from '@/components/icons/RemoveCircleIcon'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
 import {
   Select,
   SelectContent,
@@ -22,11 +25,12 @@ import {
   serializeKeywordRules,
 } from '@/utils/keywordRules'
 
+const KEYWORD_BATCH_EMPTY_HINT = '请输入关键词规则'
+
 const emptyRule = (): Rule =>
   normalizeKeywordRule({
     keywords: [],
     contents: [],
-    channel: 'comment',
     cooldownSec: 8,
   })
 
@@ -72,7 +76,7 @@ export function KeywordReplySetting() {
           <div className="flex justify-between items-center">
             <h3 className="text-sm font-medium">关键词回复规则</h3>
             <div className="flex items-center gap-x-2">
-              <Button variant={'outline'} size="sm" onClick={() => setShowEditor(prev => !prev)}>
+              <Button variant="outline" size="sm" onClick={() => setShowEditor(prev => !prev)}>
                 {showEditor ? '普通模式' : '批量编辑'}
               </Button>
               <Button size="sm" onClick={addRule} className="flex items-center gap-1">
@@ -159,6 +163,17 @@ function CommonKeywordManager({
     [rules, saveRules],
   )
 
+  const moveRule = useCallback(
+    (index: number, direction: -1 | 1) => {
+      const target = index + direction
+      if (target < 0 || target >= rules.length) return
+      const next = [...rules]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      saveRules(next)
+    },
+    [rules, saveRules],
+  )
+
   const addKeyword = useCallback(
     (ruleIndex: number, keyword: string) => {
       const trimmedKeyword = keyword.trim()
@@ -210,11 +225,26 @@ function CommonKeywordManager({
       {rules.map((rule, ruleIndex) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: 下标无妨
         <Card key={ruleIndex} className="border-dashed">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+          <CardHeader className="group pb-2 flex flex-row items-center justify-between gap-2">
             <CardTitle className="text-base">规则 {ruleIndex + 1}</CardTitle>
-            <Button variant="ghost" size="icon" onClick={() => removeRule(ruleIndex)}>
-              <Trash className="h-4 w-4 text-destructive" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <MoveItemButtons
+                canMoveUp={ruleIndex > 0}
+                canMoveDown={ruleIndex < rules.length - 1}
+                onMoveUp={() => moveRule(ruleIndex, -1)}
+                onMoveDown={() => moveRule(ruleIndex, 1)}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 px-0 text-muted-foreground hover:text-destructive shadow-none"
+                onClick={() => removeRule(ruleIndex)}
+                title="删除规则"
+                aria-label="删除规则"
+              >
+                <RemoveCircleIcon className="!size-5" />
+              </Button>
+            </div>
           </CardHeader>
 
           <CardContent className="space-y-4">
@@ -230,11 +260,13 @@ function CommonKeywordManager({
                     {keyword}
                     <Button
                       variant="ghost"
-                      size="icon"
-                      className="h-5 w-5 ml-1"
+                      size="sm"
+                      className="h-6 w-6 ml-1 px-0 text-muted-foreground hover:text-destructive shadow-none"
                       onClick={() => removeKeyword(ruleIndex, keywordIndex)}
+                      title="删除关键词"
+                      aria-label="删除关键词"
                     >
-                      <X className="h-3 w-3" />
+                      <RemoveCircleIcon className="!size-4" />
                     </Button>
                   </div>
                 ))}
@@ -242,7 +274,7 @@ function CommonKeywordManager({
 
               <div className="flex gap-2">
                 <Input
-                  placeholder="例如：多少钱"
+                  placeholder="请输入关键词"
                   className="flex-1"
                   onKeyDown={e => {
                     if (e.key === 'Enter') {
@@ -253,6 +285,7 @@ function CommonKeywordManager({
                 />
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={e => {
                     const input = e.currentTarget.previousSibling as HTMLInputElement
                     addKeyword(ruleIndex, input.value)
@@ -281,11 +314,13 @@ function CommonKeywordManager({
                     <div className="flex-1 min-w-0 break-words">{content}</div>
                     <Button
                       variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 shrink-0"
+                      size="sm"
+                      className="h-7 w-7 shrink-0 px-0 text-muted-foreground hover:text-destructive shadow-none"
                       onClick={() => removeContent(ruleIndex, contentIndex)}
+                      title="删除回复"
+                      aria-label="删除回复"
                     >
-                      <X className="h-3 w-3" />
+                      <RemoveCircleIcon className="!size-5" />
                     </Button>
                   </div>
                 ))}
@@ -293,7 +328,7 @@ function CommonKeywordManager({
 
               <div className="flex gap-2">
                 <Input
-                  placeholder="例如：亲看2号链接~"
+                  placeholder="请输入回复内容"
                   className="flex-1"
                   onKeyDown={e => {
                     if (e.key === 'Enter') {
@@ -304,6 +339,7 @@ function CommonKeywordManager({
                 />
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={e => {
                     const input = e.currentTarget.previousSibling as HTMLInputElement
                     addContent(ruleIndex, input.value)
@@ -320,6 +356,7 @@ function CommonKeywordManager({
               <Input
                 type="number"
                 min={0}
+                placeholder="例如：8"
                 value={rule.cooldownSec ?? 8}
                 onChange={e => {
                   const n = Number(e.target.value)
@@ -332,7 +369,6 @@ function CommonKeywordManager({
                 防止同一句话回得太勤。例如填 8，就是至少隔 8 秒才再回一次。
               </p>
             </div>
-            {/* v1.2 暂缓：本规则通道 / 弹窗商品序号 */}
           </CardContent>
         </Card>
       ))}
@@ -341,11 +377,17 @@ function CommonKeywordManager({
 }
 
 function KeywordReplyEditor({ rules, onSave }: { rules: Rule[]; onSave: (rules: Rule[]) => void }) {
-  const toLocalText = useCallback((rules: Rule[]): string => serializeKeywordRules(rules), [])
+  const toLocalText = useCallback((nextRules: Rule[]): string => {
+    // 兼容历史脏数据：空规则曾被序列化成单独的 `|`
+    return serializeKeywordRules(nextRules)
+      .split('\n')
+      .map(line => (line.trim() === '|' ? '' : line))
+      .join('\n')
+  }, [])
 
   const { toast } = useToast()
-  const [localText, setLocalText] = useState(toLocalText(rules))
-  const [savedText, setSavedText] = useState(localText)
+  const [localText, setLocalText] = useState(() => toLocalText(rules))
+  const [savedText, setSavedText] = useState(() => toLocalText(rules))
 
   const lines = useMemo(() => localText.split('\n'), [localText])
   const hasChanges = localText !== savedText
@@ -366,38 +408,51 @@ function KeywordReplyEditor({ rules, onSave }: { rules: Rule[]; onSave: (rules: 
   }
 
   useEffect(() => {
-    setLocalText(toLocalText(rules))
+    const next = toLocalText(rules)
+    setLocalText(next)
+    setSavedText(next)
   }, [rules, toLocalText])
+
+  const handleDeleteLine = (index: number) => {
+    if (index === 0) return
+    const nextLines = lines.filter((_, i) => i !== index)
+    setLocalText(nextLines.length > 0 ? nextLines.join('\n') : '')
+  }
+
+  const handleMoveLine = (index: number, direction: -1 | 1) => {
+    const target = index + direction
+    if (target < 0 || target >= lines.length) return
+    const nextLines = [...lines]
+    ;[nextLines[index], nextLines[target]] = [nextLines[target], nextLines[index]]
+    setLocalText(nextLines.join('\n'))
+  }
 
   return (
     <div>
-      <div className="flex justify-between">
-        <div>
+      <div className="flex justify-between gap-4">
+        <div className="min-w-0">
           <div className="text-sm">批量编辑</div>
-          <div className="text-muted-foreground text-xs mt-1 space-y-1">
+          <div className="text-muted-foreground text-xs mt-1 space-y-0.5">
             <p>
-              一行一条规则。先写关键词（多个用 / 分开），再用 | 接要回的话（多句也用 | 分开）。
-            </p>
-            <p>
-              末尾可加 <kbd>#cd:8</kbd> 表示至少隔 8 秒再回一次。
+              一行一条：关键词（多个用 /）|回复（多句用 |），末尾可加 <kbd>#cd:8</kbd>
             </p>
             <p>例：多少钱/啥价|{'{用户名}'} 看2号链接|稍等亲|#cd:8</p>
           </div>
         </div>
-        <Button className="self-end" onClick={handleSaveBtnClick} disabled={!hasChanges}>
+        <Button className="self-end shrink-0" onClick={handleSaveBtnClick} disabled={!hasChanges}>
           保存
         </Button>
       </div>
 
-      <div className="flex mt-4">
-        <div className="bg-gray-100 text-right px-1 py-1 font-mono text-gray-500 select-none">
+      <div className="border rounded flex relative mt-4 items-start">
+        <div className="bg-gray-100 text-right px-2 font-mono text-gray-500 select-none">
           {lines.map((_, i) => (
             <div
               // biome-ignore lint/suspicious/noArrayIndexKey: 用下标无所谓的
               key={i}
-              className="h-8 px-1 leading-8 flex items-center justify-between group"
+              className="h-8 min-h-8 max-h-8 box-border shrink-0 tabular-nums text-sm flex items-center justify-end"
             >
-              <span className="ml-2">{i + 1}</span>
+              {i + 1}
             </div>
           ))}
         </div>
@@ -406,13 +461,74 @@ function KeywordReplyEditor({ rules, onSave }: { rules: Rule[]; onSave: (rules: 
                 display: none;
             }`}
         </style>
-        <textarea
-          className="leading-8 bg-white flex-1 outline-none resize-none px-2 py-1 text-sm whitespace-pre border rounded no-scrollbar"
-          value={localText}
-          spellCheck="false"
-          onChange={e => setLocalText(e.target.value)}
-          rows={lines.length || 1}
-        />
+        <div className="relative flex-1 border-l min-w-0">
+          <div className="pointer-events-none absolute inset-0 px-2 text-sm" aria-hidden>
+            {lines.map((line, i) => (
+              <div
+                // biome-ignore lint/suspicious/noArrayIndexKey: 用下标无所谓的
+                key={i}
+                className="h-8 min-h-8 max-h-8 box-border shrink-0 truncate text-muted-foreground flex items-center"
+              >
+                {line.trim() ? null : KEYWORD_BATCH_EMPTY_HINT}
+              </div>
+            ))}
+          </div>
+          <textarea
+            className="relative z-10 block bg-transparent w-full outline-none resize-none px-2 text-sm whitespace-pre no-scrollbar overflow-hidden"
+            style={{
+              lineHeight: '32px',
+              height: (lines.length || 1) * 32,
+              paddingTop: 0,
+              paddingBottom: 0,
+            }}
+            value={localText}
+            spellCheck="false"
+            onChange={e => setLocalText(e.target.value)}
+            rows={lines.length || 1}
+          />
+        </div>
+
+        <div className="px-1 bg-white flex flex-col">
+          {lines.map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: 用下标无所谓的
+            <div key={i} className="group h-8 min-h-8 max-h-8 box-border shrink-0 flex items-center gap-1">
+              <MoveItemButtons
+                canMoveUp={i > 0}
+                canMoveDown={i < lines.length - 1}
+                onMoveUp={() => handleMoveLine(i, -1)}
+                onMoveDown={() => handleMoveLine(i, 1)}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  'h-7 w-7 shrink-0 px-0 text-muted-foreground hover:text-destructive shadow-none',
+                  i === 0 && 'invisible pointer-events-none',
+                )}
+                title="删除规则"
+                aria-label="删除规则"
+                tabIndex={i === 0 ? -1 : undefined}
+                onClick={() => handleDeleteLine(i)}
+              >
+                <RemoveCircleIcon className="!size-5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        {lines.length > 1 ? (
+          <div className="pointer-events-none absolute inset-0" aria-hidden>
+            {lines.slice(0, -1).map((_, i) => (
+              <div
+                // biome-ignore lint/suspicious/noArrayIndexKey: 用下标无所谓的
+                key={i}
+                className="absolute inset-x-0 border-b border-border"
+                style={{ top: (i + 1) * 32 }}
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   )

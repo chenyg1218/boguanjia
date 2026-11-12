@@ -49,6 +49,15 @@ export function friendlyError(error: unknown, fallback = '操作失败，请查�
   if (/ECONNREFUSED|net::|ERR_/i.test(msg)) {
     return `网络或页面加载失败：${msg}。请检查网络后重试`
   }
+  if (/not attached to the DOM|Element is not attached/i.test(msg)) {
+    return '中控台页面刚刷新导致讲解按钮失效，请重试；若频繁出现可刷新中控台后再开自动弹窗'
+  }
+  if (/GoodsListBlocked|商品列表暂时不可用|暂时无法讲解|暂时无法弹窗/i.test(msg)) {
+    return '商品操作暂时不可用，已等待恢复后继续；无需手动停任务'
+  }
+  if (/CommentAreaBlocked|评论区暂时不可用|暂时无法发言|暂时无法回复/i.test(msg)) {
+    return '评论操作暂时不可用，已等待恢复后继续；无需手动停任务'
+  }
   if (/找不到元素|ElementNotFound|locator\.|strict mode violation/i.test(msg)) {
     return `${msg}。请确认已开播、中控台页面未改版，可刷新页面后重试`
   }

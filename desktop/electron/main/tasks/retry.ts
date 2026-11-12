@@ -21,7 +21,15 @@ export async function runWithRetry<T>(
   const { maxRetries, retryDelay, logger, onRetryError, shouldRetry = () => true } = options
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const result = await fn()
+    let result: Result.Result<T, Error>
+    try {
+      result = await fn()
+    } catch (error) {
+      // Playwright 等第三方偶发抛错（如 DOM 节点刚被虚拟列表替换），转为可重试失败
+      result = Result.fail(
+        error instanceof Error ? error : new UnexpectedError({ cause: error }),
+      )
+    }
     // 被中断后也要终止此次任务
     if (Result.isSuccess(result) || result.error instanceof AbortError) {
       return result

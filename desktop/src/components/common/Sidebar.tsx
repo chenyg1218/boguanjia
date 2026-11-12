@@ -1,8 +1,10 @@
-import { Link, NavLink } from 'react-router'
+import { NavLink } from 'react-router'
 import { useCurrentAutoMessage } from '@/hooks/useAutoMessage'
 import { useCurrentAutoPopUp } from '@/hooks/useAutoPopUp'
 import { useAutoReply } from '@/hooks/useAutoReply'
 import { useCurrentLiveControl } from '@/hooks/useLiveControl'
+// 暂隐：直播话术 / 语音设置
+// import { useCurrentVoiceBroadcast } from '@/hooks/useVoiceBroadcast'
 import { useViewerAccountsStore } from '@/hooks/useViewerAccounts'
 import { cn } from '@/lib/utils'
 import { openTutorial } from '@/utils/tutorial'
@@ -14,11 +16,10 @@ import {
   CarbonGift,
   CarbonIbmEventAutomation,
   CarbonIbmWatsonTextToSpeech,
+  // CarbonMicrophoneFilled, // 暂隐：语音设置
   CarbonSettings,
   CarbonUsersChat,
 } from '../icons/carbon'
-
-// v1.2 暂缓：CarbonMicrophoneFilled（语音设置）
 
 interface SidebarTab {
   id: string
@@ -32,6 +33,8 @@ export default function Sidebar() {
   const isAutoMessageRunning = useCurrentAutoMessage(context => context.isRunning)
   const isAutoPopupRunning = useCurrentAutoPopUp(context => context.isRunning)
   const { isRunning: isAutoReplyRunning } = useAutoReply()
+  // 暂隐：直播话术
+  // const isVoiceRunning = useCurrentVoiceBroadcast(c => c.status.running)
   const isViewerDanmakuRunning = useViewerAccountsStore(s =>
     Object.values(s.runtime).some(r => r.isRunning),
   )
@@ -63,7 +66,18 @@ export default function Sidebar() {
       isRunning: isAutoReplyRunning,
       icon: <CarbonIbmEventAutomation className={iconClass} />,
     },
-    // v1.2 暂缓：直播话术 / 语音设置
+    // 暂隐：直播话术 / 语音设置
+    // {
+    //   id: '/live-script',
+    //   name: '直播话术',
+    //   isRunning: isVoiceRunning,
+    //   icon: <CarbonDocument className={iconClass} />,
+    // },
+    // {
+    //   id: '/voice-broadcast',
+    //   name: '语音设置',
+    //   icon: <CarbonMicrophoneFilled className={iconClass} />,
+    // },
     {
       id: '/ai-chat',
       name: 'AI 助手',
@@ -112,13 +126,20 @@ export default function Sidebar() {
       </div>
 
       <div className="space-y-1 border-t px-6 py-4">
-        <Link
+        <NavLink
           to="/membership"
-          className="flex w-full items-center gap-3 rounded-lg px-4 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground no-underline"
+          className={({ isActive }) =>
+            cn(
+              'flex w-full items-center gap-3 rounded-lg px-4 py-1.5 text-sm transition-colors no-underline',
+              isActive
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+            )
+          }
         >
           <CarbonGift className={iconClass} />
           会员权益
-        </Link>
+        </NavLink>
         <button
           type="button"
           onClick={() => void openTutorial()}

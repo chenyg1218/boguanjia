@@ -21,7 +21,7 @@ import { useOnboardingStore } from './hooks/useOnboarding'
 import { useToast } from './hooks/useToast'
 import { useUpdateConfigStore, useUpdateStore } from './hooks/useUpdate'
 import { useViewerAccountsStore } from './hooks/useViewerAccounts'
-// v1.2 暂缓：语音读稿播放器
+// 暂隐：直播话术 / 语音设置
 // import { useVoiceBroadcastPlayer } from './hooks/useVoiceBroadcast'
 import './App.css'
 
@@ -357,6 +357,7 @@ function App() {
   useSyncLiveControlConnection()
   useAutoReconnectViewerAccounts()
   useReplyTaskCommentListener()
+  // 暂隐：直播话术 / 语音设置
   // useVoiceBroadcastPlayer()
 
   return (
