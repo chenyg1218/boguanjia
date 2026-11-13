@@ -1,11 +1,10 @@
-import { BookOpenIcon, CopyIcon, FileTextIcon, Trash } from 'lucide-react'
+import { CopyIcon, FileTextIcon, Trash } from 'lucide-react'
 import { IPC_CHANNELS } from 'shared/ipcChannels'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/useToast'
 import { performFullCleanup } from '@/utils/storage'
-import { openTutorial } from '@/utils/tutorial'
 
 const AUTHOR_WECHAT_ID = 'xiaogangSR'
 
@@ -45,25 +44,7 @@ export function OtherSetting() {
         <div className="space-y-6">
           <div className="space-y-1">
             <Label>其他设置</Label>
-            <p className="text-sm text-muted-foreground">教程、联系作者、日志</p>
-          </div>
-
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <Label>使用教程</Label>
-              <p className="text-sm text-muted-foreground">
-                安装、连接中控台、自动发言 / 弹窗 / 回复等完整说明
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              onClick={() => void openTutorial()}
-            >
-              <BookOpenIcon className="mr-0 h-4 w-4" />
-              查看教程
-            </Button>
+            <p className="text-sm text-muted-foreground">联系作者、日志</p>
           </div>
 
           <div className="space-y-1">
@@ -77,7 +58,7 @@ export function OtherSetting() {
             <div className="space-y-1">
               <Label>联系作者</Label>
               <p className="text-sm text-muted-foreground">
-                问题反馈、功能建议 · 微信 {AUTHOR_WECHAT_ID}
+                也可加微信沟通 · {AUTHOR_WECHAT_ID}
               </p>
             </div>
             <Button variant="outline" size="sm" className="shrink-0" onClick={handleCopyWechat}>

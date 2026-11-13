@@ -5,6 +5,7 @@ import { setupAutoPopUpIpcHandlers } from './autoPopUp'
 import { setupBrowserIpcHandlers } from './browser'
 import { setupAutoReplyIpcHandlers } from './commentListener'
 import { setupLiveControlIpcHandlers } from './connection'
+import { setupFeedbackIpcHandlers } from './feedback'
 import { setupLicenseIpcHandlers } from './license'
 import { setupSecureIpcHandlers } from './secure'
 import { setupUpdateIpcHandlers } from './update'
@@ -24,4 +25,5 @@ setupBrowserIpcHandlers()
 setupAppIpcHandlers()
 setupUpdateIpcHandlers()
 setupLicenseIpcHandlers()
+setupFeedbackIpcHandlers()
 setupSecureIpcHandlers()

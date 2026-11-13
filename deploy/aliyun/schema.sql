@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS machines (
   expires_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   revoked INTEGER NOT NULL DEFAULT 0,
-  plan TEXT NOT NULL DEFAULT 'flagship',
+  plan TEXT NOT NULL DEFAULT 'free',
   bound_platform TEXT NOT NULL DEFAULT ''
 );
 
@@ -30,3 +30,23 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_day_name ON events(created_at, name);
 CREATE INDEX IF NOT EXISTS idx_events_machine_day ON events(machine_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_name ON events(name);
+
+-- 用户问题反馈（纯文字 + 可选压缩截图路径）
+CREATE TABLE IF NOT EXISTS feedbacks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  machine_id TEXT NOT NULL,
+  category TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  contact TEXT NOT NULL DEFAULT '',
+  app_version TEXT NOT NULL DEFAULT '',
+  plan TEXT NOT NULL DEFAULT '',
+  bound_platform TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  image_count INTEGER NOT NULL DEFAULT 0,
+  client_created_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedbacks_status_created ON feedbacks(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_feedbacks_machine_created ON feedbacks(machine_id, created_at);

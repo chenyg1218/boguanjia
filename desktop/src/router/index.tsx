@@ -8,6 +8,7 @@ import LiveControl from '@/pages/LiveControl'
 // 暂隐：直播话术 / 语音设置
 // import LiveScript from '@/pages/LiveScript'
 // import VoiceBroadcast from '@/pages/VoiceBroadcast'
+import FeedbackPage from '@/pages/Feedback'
 import Membership from '@/pages/Membership'
 import Settings from '@/pages/SettingsPage'
 import ViewerDanmaku from '@/pages/ViewerDanmaku'
@@ -46,6 +47,10 @@ export const router = createHashRouter([
       {
         path: '/membership',
         element: <Membership />,
+      },
+      {
+        path: '/feedback',
+        element: <FeedbackPage />,
       },
       {
         path: '/settings',

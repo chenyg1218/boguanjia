@@ -423,6 +423,36 @@ export interface IpcChannels {
       needsPlatformBindConfirm: boolean
     }
   }
+
+  [IPC_CHANNELS.feedback.submit]: (payload: {
+    category: 'bug' | 'feature' | 'other'
+    title: string
+    body: string
+    contact?: string
+    images?: string[]
+  }) => {
+    ok: boolean
+    message: string
+    id?: number
+  }
+  [IPC_CHANNELS.feedback.list]: () => {
+    ok: boolean
+    message?: string
+    items: Array<{
+      id: number
+      category: string
+      title: string
+      body: string
+      contact: string
+      app_version: string
+      plan: string
+      bound_platform: string
+      status: string
+      image_count: number
+      created_at: string
+      updated_at: string
+    }>
+  }
   [IPC_CHANNELS.license.changed]: (payload: {
     status: {
       isPro: boolean

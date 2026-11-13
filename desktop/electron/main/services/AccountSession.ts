@@ -92,19 +92,24 @@ export class AccountSession {
 
   async connect(config: { headless?: boolean; storageState?: string }) {
     let storageState: StorageState | undefined
+    let hadPersistedSession = false
 
     const fromDisk = sessionStateStore.load(this.account.id)
     if (fromDisk) {
       this.logger.info('已恢复上次登录状态')
       storageState = JSON.parse(fromDisk)
+      hadPersistedSession = true
     } else if (config.storageState) {
       this.logger.info('正在迁移旧版登录状态')
       storageState = JSON.parse(config.storageState)
+      hadPersistedSession = true
+    } else {
+      this.logger.info('未找到本地登录态')
     }
 
     this.browserSession = await browserManager.createSession(config.headless, storageState)
 
-    await this.ensureAuthenticated(this.browserSession, config.headless)
+    await this.ensureAuthenticated(this.browserSession, config.headless, hadPersistedSession)
 
     await this.persistStorageState()
 
@@ -197,14 +202,22 @@ export class AccountSession {
     windowManager.send(IPC_CHANNELS.chrome.saveState, this.account.id)
   }
 
-  private async ensureAuthenticated(session: BrowserSession, headless = true) {
+  private async ensureAuthenticated(
+    session: BrowserSession,
+    headless = true,
+    hadPersistedSession = false,
+  ) {
     this.browserSession = session
     try {
       const isConnected = await this.platform.connect(this.browserSession)
       if (!isConnected) {
+        if (hadPersistedSession) {
+          this.logger.info('本地登录态已失效（平台要求重新登录），请扫码')
+        } else {
+          this.logger.info('需要登录，请在打开的浏览器中扫码（约 5 分钟内完成）')
+        }
         if (headless) {
           await this.browserSession.browser.close()
-          this.logger.info('需要登录，请在打开的浏览器中扫码（约 5 分钟内完成）')
           this.browserSession = await browserManager.createSession(false)
         }
         await this.platform.login(this.browserSession)
@@ -215,7 +228,8 @@ export class AccountSession {
           this.logger.info('登录成功，浏览器将继续以无头模式运行')
           this.browserSession = await browserManager.createSession(headless, storageState)
         }
-        await this.ensureAuthenticated(this.browserSession, headless)
+        // 刚扫码写入的会话视为已有持久态，避免递归日志再报「未找到」
+        await this.ensureAuthenticated(this.browserSession, headless, true)
       }
     } catch (error) {
       // 如视频号「已登录未开播」：尽量先落盘，减少下次扫码

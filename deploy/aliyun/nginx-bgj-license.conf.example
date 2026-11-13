@@ -20,6 +20,8 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/bgj-license.sugaiming.com/privkey.pem;
 
     location / {
+        # 反馈截图 JSON 可达约 2MB
+        client_max_body_size 2m;
         proxy_pass http://127.0.0.1:8081;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

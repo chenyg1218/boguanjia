@@ -192,6 +192,19 @@
     .sidebar-nav .ico {
       width: 18px; text-align: center; opacity: 0.9; font-size: 14px;
     }
+    .sidebar-nav .nav-badge {
+      margin-left: auto;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: #ff4d4f;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 650;
+      line-height: 18px;
+      text-align: center;
+    }
     .sidebar-foot {
       padding: 12px 16px 16px;
       border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -404,6 +417,47 @@
       color: #0958d9;
     }
     .tag-ok { background: #f6ffed; color: #389e0d; }
+    .tag-open { background: #fff1f0; color: #cf1322; font-weight: 600; }
+    .tag-read { background: #e6f4ff; color: #0958d9; font-weight: 600; }
+    .tag-done { background: #f6ffed; color: #389e0d; font-weight: 600; }
+    .tag-ignored { background: #f5f5f5; color: #8c8c8c; font-weight: 600; }
+    .status-text-open { color: #cf1322; font-weight: 600; }
+    .status-text-read { color: #0958d9; font-weight: 600; }
+    .status-text-done { color: #389e0d; font-weight: 600; }
+    .status-text-ignored { color: #8c8c8c; font-weight: 600; }
+    .fb-row { cursor: pointer; }
+    .fb-row:hover td { background: #fafafa; }
+    .fb-detail {
+      display: none;
+      padding: 14px 20px 18px;
+      border-top: 1px solid var(--line);
+      background: #fafafa;
+    }
+    .fb-detail.open { display: block; }
+    .fb-meta {
+      display: flex; flex-wrap: wrap; gap: 8px 16px;
+      color: var(--muted); font-size: 12px; margin-bottom: 10px;
+    }
+    .fb-body {
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.6;
+      margin: 0 0 12px;
+    }
+    .fb-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .fb-images { display: flex; flex-wrap: wrap; gap: 10px; }
+    .fb-images img {
+      max-width: 220px;
+      max-height: 160px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #fff;
+      cursor: zoom-in;
+      object-fit: contain;
+    }
+    .fb-filters { display: none; }
+    .fb-filters.show { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+    .stats-filters.hide { display: none; }
     .tag-warn { background: #fffbe6; color: #d48806; }
 
     @media (max-width: 900px) {
@@ -460,6 +514,11 @@
         <button type="button" data-tab="tasks">
           <span class="ico">☰</span>功能使用
         </button>
+        <div class="nav-label">用户服务</div>
+        <button type="button" data-tab="feedback">
+          <span class="ico">✉</span>问题反馈
+          <span id="feedbackBadge" class="nav-badge" style="display:none">0</span>
+        </button>
       </nav>
       <div class="sidebar-foot">内部运营 · 勿对外分享</div>
     </aside>
@@ -476,7 +535,7 @@
       </header>
 
       <div class="content">
-        <div class="filters">
+        <div class="filters stats-filters" id="statsFilters">
           <label>
             日期
             <input type="date" id="day" />
@@ -516,6 +575,23 @@
             <button type="button" class="btn btn-primary" id="refreshBtn">刷新数据</button>
           </div>
           <div id="loadErr" class="err" style="width:100%;margin:0"></div>
+        </div>
+
+        <div class="filters fb-filters" id="fbFilters">
+          <label>
+            状态
+            <select id="fbStatus">
+              <option value="" selected>全部</option>
+              <option value="open">待处理</option>
+              <option value="read">处理中</option>
+              <option value="done">已处理</option>
+              <option value="ignored">已忽略</option>
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button type="button" class="btn btn-primary" id="fbRefreshBtn">刷新反馈</button>
+          </div>
+          <div id="fbLoadErr" class="err" style="width:100%;margin:0"></div>
         </div>
 
         <section id="tab-overview" class="panel active">
@@ -604,6 +680,27 @@
             </div>
           </div>
         </section>
+
+        <section id="tab-feedback" class="panel">
+          <div class="card">
+            <div class="card-hd">
+              <h3>问题反馈</h3>
+              <span class="hint" id="fbHint">点击行查看详情</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th><th>类型</th><th>标题</th><th>套餐</th><th>版本</th>
+                    <th>机器</th><th>图</th><th>状态</th>
+                  </tr>
+                </thead>
+                <tbody id="feedbackBody"></tbody>
+              </table>
+            </div>
+            <div id="feedbackDetail" class="fb-detail"></div>
+          </div>
+        </section>
       </div>
     </div>
   </div>
@@ -628,11 +725,22 @@
       'send-batch-messages': '一键评论',
     }
     const PLAN_NAMES = { free: '基础版', pro: '专业版', flagship: '旗舰版' }
+    const CATEGORY_NAMES = { bug: '功能异常', feature: '功能建议', other: '其他' }
+    const STATUS_NAMES = {
+      open: '待处理',
+      read: '处理中',
+      done: '已处理',
+      ignored: '已忽略',
+    }
     const TAB_TITLES = {
       overview: '概览',
       platforms: '平台与连接',
       tasks: '功能使用',
+      feedback: '问题反馈',
     }
+    let feedbackItems = []
+    let selectedFeedbackId = null
+    let currentTab = 'overview'
 
     const $ = (id) => document.getElementById(id)
     const loginBox = $('loginBox')
@@ -679,6 +787,7 @@
           connect_rate: 86,
           machine_connect_rate: 75,
           licensed_machines: 3,
+          total_seen_machines: 53,
         },
         trend,
         versions: [
@@ -721,6 +830,19 @@
       appBox.classList.add('show')
       if (!$('day').value) $('day').value = todayLocal()
       loadStats()
+      // 角标：顺带拉一次待处理数量
+      void refreshOpenBadge()
+    }
+
+    async function refreshOpenBadge() {
+      if (demoMode || IS_LOCAL_FILE) {
+        setFeedbackBadge(1)
+        return
+      }
+      try {
+        const { res, data } = await api(adminUrl('api/feedback?status=open&limit=1&offset=0'))
+        if (res.ok && data.ok) setFeedbackBadge(data.open_count || data.total || 0)
+      } catch (_) {}
     }
 
     function enterDemo() {
@@ -784,14 +906,21 @@
       showLogin()
     })
     $('refreshBtn').addEventListener('click', loadStats)
+    $('fbRefreshBtn').addEventListener('click', loadFeedback)
 
     document.querySelectorAll('.tabs button').forEach((btn) => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tabs button').forEach((b) => b.classList.remove('active'))
         document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'))
         btn.classList.add('active')
-        document.getElementById('tab-' + btn.dataset.tab).classList.add('active')
-        $('pageTitle').textContent = TAB_TITLES[btn.dataset.tab] || '运营看板'
+        const tab = btn.dataset.tab
+        currentTab = tab
+        document.getElementById('tab-' + tab).classList.add('active')
+        $('pageTitle').textContent = TAB_TITLES[tab] || '运营看板'
+        const isFb = tab === 'feedback'
+        $('statsFilters').classList.toggle('hide', isFb)
+        $('fbFilters').classList.toggle('show', isFb)
+        if (isFb) loadFeedback()
       })
     })
 
@@ -805,6 +934,232 @@
 
     function taskLabel(t) {
       return TASK_NAMES[t] || t || '-'
+    }
+
+    function statusTag(st) {
+      const name = STATUS_NAMES[st] || st || '-'
+      const tagCls =
+        st === 'open' || st === 'read' || st === 'done' || st === 'ignored' ? 'tag-' + st : ''
+      const textCls =
+        st === 'open' || st === 'read' || st === 'done' || st === 'ignored'
+          ? 'status-text-' + st
+          : ''
+      return `<span class="tag ${tagCls}"><span class="${textCls}">${name}</span></span>`
+    }
+
+    function setFeedbackBadge(n) {
+      const el = $('feedbackBadge')
+      if (!el) return
+      const count = Number(n) || 0
+      if (count > 0) {
+        el.style.display = 'inline-block'
+        el.textContent = count > 99 ? '99+' : String(count)
+      } else {
+        el.style.display = 'none'
+      }
+    }
+
+    function mockFeedback() {
+      return {
+        ok: true,
+        total: 2,
+        open_count: 1,
+        items: [
+          {
+            id: 1,
+            machine: 'a1b2c3d4',
+            category: 'bug',
+            title: '自动弹窗偶发失败',
+            body: '开播约 10 分钟后弹窗停住，日志里有 timeout。',
+            contact: 'wechat_demo',
+            app_version: '1.2.1',
+            plan: 'pro',
+            bound_platform: 'douyin',
+            status: 'open',
+            image_count: 0,
+            created_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+          },
+          {
+            id: 2,
+            machine: 'e5f60718',
+            category: 'feature',
+            title: '希望支持定时发言',
+            body: '想按整点自动发固定话术。',
+            contact: '',
+            app_version: '1.2.0',
+            plan: 'flagship',
+            bound_platform: 'buyin',
+            status: 'read',
+            image_count: 0,
+            created_at: new Date(Date.now() - 86400000).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+          },
+        ],
+      }
+    }
+
+    async function loadFeedback() {
+      $('fbLoadErr').textContent = ''
+      $('fbRefreshBtn').disabled = true
+      try {
+        if (demoMode || IS_LOCAL_FILE) {
+          renderFeedback(mockFeedback())
+          $('fbLoadErr').textContent = '本地预览：展示的是示例数据'
+          return
+        }
+        const q = new URLSearchParams({
+          status: $('fbStatus').value || '',
+          limit: '50',
+          offset: '0',
+        })
+        const { res, data } = await api(adminUrl('api/feedback?' + q.toString()))
+        if (!res.ok || !data.ok) {
+          $('fbLoadErr').textContent = data.error || '加载失败'
+          return
+        }
+        renderFeedback(data)
+      } catch (err) {
+        $('fbLoadErr').textContent = String(err && err.message ? err.message : err)
+      } finally {
+        $('fbRefreshBtn').disabled = false
+      }
+    }
+
+    function renderFeedback(data) {
+      feedbackItems = data.items || []
+      setFeedbackBadge(data.open_count)
+      $('fbHint').textContent = `共 ${data.total || 0} 条 · 待处理 ${data.open_count || 0}`
+      $('feedbackBody').innerHTML =
+        feedbackItems
+          .map(
+            (item) => `<tr class="fb-row" data-id="${item.id}">
+              <td>${(item.created_at || '').replace('T', ' ').replace('Z', '')}</td>
+              <td>${CATEGORY_NAMES[item.category] || item.category}</td>
+              <td>${escapeHtml(item.title || '')}</td>
+              <td>${PLAN_NAMES[item.plan] || item.plan || '-'}</td>
+              <td><span class="tag">${escapeHtml(item.app_version || '-')}</span></td>
+              <td><code>${escapeHtml(item.machine || '')}</code></td>
+              <td>${item.image_count || 0}</td>
+              <td>${statusTag(item.status)}</td>
+            </tr>`,
+          )
+          .join('') || '<tr><td colspan="8" class="muted">暂无反馈</td></tr>'
+
+      $('feedbackBody').querySelectorAll('.fb-row').forEach((row) => {
+        row.addEventListener('click', () => {
+          const id = Number(row.dataset.id)
+          selectedFeedbackId = id
+          void showFeedbackDetail(id)
+        })
+      })
+
+      if (selectedFeedbackId) {
+        const still = feedbackItems.find((x) => x.id === selectedFeedbackId)
+        if (still) void showFeedbackDetail(selectedFeedbackId)
+        else {
+          selectedFeedbackId = null
+          $('feedbackDetail').classList.remove('open')
+          $('feedbackDetail').innerHTML = ''
+        }
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+    }
+
+    async function showFeedbackDetail(id) {
+      const item = feedbackItems.find((x) => x.id === id)
+      const box = $('feedbackDetail')
+      if (!item) {
+        box.classList.remove('open')
+        box.innerHTML = ''
+        return
+      }
+      const actions = ['open', 'read', 'done', 'ignored']
+        .filter((s) => s !== item.status)
+        .map(
+          (s) =>
+            `<button type="button" class="btn btn-default" data-status="${s}">标为${STATUS_NAMES[s]}</button>`,
+        )
+        .join('')
+      box.innerHTML = `
+        <div class="fb-meta">
+          <span>#${item.id}</span>
+          <span>${CATEGORY_NAMES[item.category] || item.category}</span>
+          <span>${PLAN_NAMES[item.plan] || item.plan || '-'}</span>
+          <span>${platformLabel(item.bound_platform)}</span>
+          <span>版本 ${escapeHtml(item.app_version || '-')}</span>
+          <span>机器 <code>${escapeHtml(item.machine || '')}</code></span>
+          <span>联系 ${escapeHtml(item.contact || '未填')}</span>
+          <span>${statusTag(item.status)}</span>
+        </div>
+        <h3 style="margin:0 0 8px;font-size:16px">${escapeHtml(item.title || '')}</h3>
+        <pre class="fb-body">${escapeHtml(item.body || '')}</pre>
+        <div class="fb-actions">${actions}</div>
+        <div class="fb-images" id="fbImages"></div>
+      `
+      box.classList.add('open')
+      box.querySelectorAll('[data-status]').forEach((btn) => {
+        btn.addEventListener('click', () => void updateFeedbackStatus(item.id, btn.dataset.status))
+      })
+      await loadFeedbackImages(item)
+    }
+
+    async function loadFeedbackImages(item) {
+      const wrap = $('fbImages')
+      if (!wrap) return
+      const n = Number(item.image_count) || 0
+      if (n <= 0) {
+        wrap.innerHTML = '<span class="muted">无截图</span>'
+        return
+      }
+      if (demoMode || IS_LOCAL_FILE) {
+        wrap.innerHTML = '<span class="muted">本地预览无真实截图</span>'
+        return
+      }
+      wrap.innerHTML = '<span class="muted">加载截图中…</span>'
+      const parts = []
+      for (let i = 0; i < n; i++) {
+        try {
+          const res = await fetch(adminUrl(`api/feedback/${item.id}/image/${i}`), {
+            headers: { 'X-Admin-Token': token() },
+          })
+          if (!res.ok) continue
+          const blob = await res.blob()
+          const url = URL.createObjectURL(blob)
+          parts.push(
+            `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="截图 ${i + 1}" /></a>`,
+          )
+        } catch (_) {}
+      }
+      wrap.innerHTML = parts.join('') || '<span class="muted">截图加载失败</span>'
+    }
+
+    async function updateFeedbackStatus(id, status) {
+      if (demoMode || IS_LOCAL_FILE) {
+        const item = feedbackItems.find((x) => x.id === id)
+        if (item) item.status = status
+        renderFeedback({
+          ok: true,
+          total: feedbackItems.length,
+          open_count: feedbackItems.filter((x) => x.status === 'open').length,
+          items: feedbackItems,
+        })
+        return
+      }
+      const { res, data } = await api(adminUrl('api/feedback/status'), {
+        method: 'POST',
+        body: JSON.stringify({ id, status }),
+      })
+      if (!res.ok || !data.ok) {
+        $('fbLoadErr').textContent = data.error || '更新状态失败'
+        return
+      }
+      await loadFeedback()
     }
 
     async function loadStats() {
@@ -845,6 +1200,7 @@
         metric('连接成功率', (o.connect_rate ?? 0) + '%'),
         metric('至少连成功机占比', (o.machine_connect_rate ?? 0) + '%'),
         metric('有效授权机', o.licensed_machines ?? 0),
+        metric('累计机器', o.total_seen_machines ?? 0),
       ].join('')
 
       const trend = data.trend || []

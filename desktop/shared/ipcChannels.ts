@@ -134,6 +134,12 @@ export const IPC_CHANNELS = {
     /** 主进程运行中复检后推送（到期 / 心跳） */
     changed: 'license:changed',
   },
+  feedback: {
+    /** 提交问题反馈（文字 + 可选压缩截图） */
+    submit: 'feedback:submit',
+    /** 拉取本机历史反馈 */
+    list: 'feedback:list',
+  },
   log: 'log',
   app: {
     openLogFolder: 'app:openLogFolder',

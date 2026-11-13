@@ -13,6 +13,7 @@ import {
   CarbonChat,
   CarbonContentDeliveryNetwork,
   CarbonDocument,
+  CarbonEmail,
   CarbonGift,
   CarbonIbmEventAutomation,
   CarbonIbmWatsonTextToSpeech,
@@ -40,6 +41,14 @@ export default function Sidebar() {
   )
 
   const iconClass = 'h-5 w-5 shrink-0'
+  /** 底栏项选中样式与「应用设置」NavLink 保持一致 */
+  const footerItemClass = (active: boolean) =>
+    cn(
+      'flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-sm transition-colors',
+      active
+        ? 'bg-primary/10 text-primary'
+        : 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground',
+    )
 
   const tabs: SidebarTab[] = [
     {
@@ -125,17 +134,11 @@ export default function Sidebar() {
         </nav>
       </div>
 
-      <div className="space-y-1 border-t px-6 py-4">
+      {/* 高度与中间栏日志区一致，保证分隔线水平对齐 */}
+      <div className="flex h-[180px] shrink-0 flex-col justify-center gap-1 border-t px-6">
         <NavLink
           to="/membership"
-          className={({ isActive }) =>
-            cn(
-              'flex w-full items-center gap-3 rounded-lg px-4 py-1.5 text-sm transition-colors no-underline',
-              isActive
-                ? 'bg-primary/10 text-primary'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-            )
-          }
+          className={({ isActive }) => cn(footerItemClass(isActive), 'no-underline')}
         >
           <CarbonGift className={iconClass} />
           会员权益
@@ -143,21 +146,21 @@ export default function Sidebar() {
         <button
           type="button"
           onClick={() => void openTutorial()}
-          className="flex w-full items-center gap-3 rounded-lg px-4 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className={cn(footerItemClass(false), 'border-0 text-left')}
         >
           <CarbonDocument className={iconClass} />
           使用教程
         </button>
         <NavLink
+          to="/feedback"
+          className={({ isActive }) => cn(footerItemClass(isActive), 'no-underline')}
+        >
+          <CarbonEmail className={iconClass} />
+          问题反馈
+        </NavLink>
+        <NavLink
           to="/settings"
-          className={({ isActive }) =>
-            cn(
-              'flex w-full items-center gap-3 rounded-lg px-4 py-1.5 text-sm transition-colors no-underline',
-              isActive
-                ? 'bg-primary/10 text-primary'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-            )
-          }
+          className={({ isActive }) => cn(footerItemClass(isActive), 'no-underline')}
         >
           <CarbonSettings className={iconClass} />
           应用设置

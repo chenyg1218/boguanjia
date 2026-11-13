@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Jindou/Boguanjia license API: redeem/validate/bind-platform/telemetry + /admin dashboard."""
+"""Jindou/Boguanjia license API: redeem/validate/bind-platform/telemetry/feedback + /admin dashboard."""
 
+import base64
 import json
 import os
 import re
@@ -28,6 +29,8 @@ PORT = int(os.environ.get("JINDOU_PORT", "80"))
 RATE_WINDOW_S = 60.0
 RATE_MAX = 30
 MAX_BODY_BYTES = 65536
+# 反馈含压缩截图，单独放宽（nginx 也需 client_max_body_size ≥ 2m）
+MAX_FEEDBACK_BODY_BYTES = 2 * 1024 * 1024
 SIGNING_SEED = os.environ.get("JINDOU_SIGNING_SEED", "").strip()
 API_KEY = os.environ.get("JINDOU_API_KEY", "").strip()
 # 播管家优先 BGJ_ADMIN_PASSWORD；兼容共用进程时的 JINDOU_ADMIN_PASSWORD
@@ -48,6 +51,15 @@ _ALLOWED_PROP_KEYS = frozenset(
 )
 _EVENT_RETENTION_DAYS = 90
 _MAX_EVENTS_PER_REQUEST = 20
+_FEEDBACK_CATEGORIES = frozenset({"bug", "feature", "other"})
+_FEEDBACK_STATUSES = frozenset({"open", "read", "done", "ignored"})
+_FEEDBACK_MAX_IMAGES = 3
+_FEEDBACK_MAX_IMAGE_BYTES = 450 * 1024
+_FEEDBACK_MAX_TITLE = 80
+_FEEDBACK_MAX_BODY = 2000
+_FEEDBACK_MAX_CONTACT = 64
+_FEEDBACK_RATE_PER_HOUR = 5
+_JPEG_MAGIC = b"\xff\xd8\xff"
 # 与桌面端 shared/platforms.ts 对齐（基础/专业版单平台锁定）
 _ALLOWED_PLATFORMS = frozenset(
     {
@@ -69,13 +81,22 @@ _rate_buckets = {}
 _db_lock = threading.Lock()
 
 
-def _normalize_plan(plan):
+def _normalize_plan(plan, default="flagship"):
+    """档位归一。default 仅用于未知值：卡密/付费机保持 flagship，避免误降档。"""
     raw = (plan or "").strip().lower()
+    if raw in ("free", "basic"):
+        return "free"
     if raw in ("pro", "professional"):
         return "pro"
     if raw in ("flagship", "ultimate", "unlimited"):
         return "flagship"
-    return "flagship"
+    return default
+
+
+def _normalize_card_plan(plan):
+    """卡密仅 pro/flagship；未知按历史默认旗舰。"""
+    p = _normalize_plan(plan, default="flagship")
+    return "pro" if p == "pro" else "flagship"
 
 
 def _normalize_platform(platform):
@@ -84,12 +105,47 @@ def _normalize_platform(platform):
 
 
 def _plan_rank(plan):
-    return 2 if _normalize_plan(plan) == "flagship" else 1
+    p = _normalize_plan(plan, default="flagship")
+    if p == "flagship":
+        return 2
+    if p == "pro":
+        return 1
+    return 0
 
 
 def _max_accounts(plan):
-    """专业版 3；旗舰版 -1（无上限）。"""
-    return 3 if _normalize_plan(plan) == "pro" else -1
+    """基础版 1；专业版 3；旗舰版 -1（无上限）。"""
+    p = _normalize_plan(plan, default="flagship")
+    if p == "flagship":
+        return -1
+    if p == "pro":
+        return 3
+    return 1
+
+
+def _effective_machine_plan(row):
+    """运营/展示用有效档位：占位、吊销、过期均视为 free。"""
+    if row is None:
+        return "free"
+    try:
+        revoked = int(row["revoked"] or 0) != 0
+    except (KeyError, IndexError, TypeError, ValueError):
+        revoked = False
+    if revoked:
+        return "free"
+    try:
+        exp = (row["expires_at"] or "").strip()
+    except (KeyError, IndexError, TypeError):
+        exp = ""
+    if not exp or exp == _PLATFORM_STUB_EXPIRES:
+        return "free"
+    exp_dt = _parse_expires(exp)
+    if exp_dt is None or exp_dt < _now_utc():
+        return "free"
+    try:
+        return _normalize_plan(row["plan"], default="flagship")
+    except (KeyError, IndexError, TypeError):
+        return "flagship"
 
 
 def _issue_license_token(machine_id, expires_at_utc, plan="flagship"):
@@ -104,7 +160,7 @@ def _issue_license_token(machine_id, expires_at_utc, plan="flagship"):
             _now_iso(),
             SESSION_GRACE_DAYS,
             SIGNING_SEED,
-            plan=_normalize_plan(plan),
+            plan=_normalize_card_plan(plan),
         )
     except Exception as exc:
         print("license token issue failed:", exc)
@@ -116,9 +172,12 @@ def _attach_token(data, machine_id, plan="flagship"):
         return data
     mid = _normalize_machine_id(machine_id)
     exp = str(data.get("expires_at") or "")
-    plan_n = _normalize_plan(plan or data.get("plan"))
+    plan_n = _normalize_plan(plan or data.get("plan"), default="flagship")
     data["plan"] = plan_n
     data["max_accounts"] = _max_accounts(plan_n)
+    # 基础版不签发付费 token
+    if plan_n == "free":
+        return data
     if data.get("ok") and mid and exp and not data.get("revoked"):
         tok = _issue_license_token(mid, exp, plan_n)
         if tok:
@@ -138,9 +197,11 @@ def _verify_request_sig(path, payload):
     mid = str(payload.get("machine_id") or "")
     ts = str(payload.get("ts") or "")
     sig = str(payload.get("sig") or "")
+    # ensure_ascii=False：与桌面端 JSON.stringify 一致（中文不转 \uXXXX），
+    # 否则含中文的 /feedback 等请求会验签失败。
     body = json.dumps(
         {k: v for k, v in payload.items() if k != "sig"},
-        ensure_ascii=True,
+        ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
@@ -187,6 +248,19 @@ def _ensure_db_dir():
         os.makedirs(parent)
 
 
+def _feedback_image_dir():
+    """截图目录：与 DB 同级的 feedback_images/。"""
+    parent = os.path.dirname(DB_PATH) or "."
+    path = os.path.join(parent, "feedback_images")
+    if not os.path.isdir(path):
+        os.makedirs(path)
+    return path
+
+
+def _feedback_image_path(feedback_id, index):
+    return os.path.join(_feedback_image_dir(), "%d_%d.jpg" % (int(feedback_id), int(index)))
+
+
 def _connect():
     _ensure_db_dir()
     conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
@@ -211,19 +285,27 @@ def _migrate(conn):
         "expires_at TEXT NOT NULL,"
         "updated_at TEXT NOT NULL,"
         "revoked INTEGER NOT NULL DEFAULT 0,"
-        "plan TEXT NOT NULL DEFAULT 'flagship',"
+        "plan TEXT NOT NULL DEFAULT 'free',"
         "bound_platform TEXT NOT NULL DEFAULT '')"
     )
     mcols = {row[1] for row in conn.execute("PRAGMA table_info(machines)").fetchall()}
     if mcols and "plan" not in mcols:
+        # 旧库补列：默认 free，避免新列把占位机标成旗舰
         conn.execute(
-            "ALTER TABLE machines ADD COLUMN plan TEXT NOT NULL DEFAULT 'flagship'"
+            "ALTER TABLE machines ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'"
         )
     # 重新读列：新建表已含 plan 时仍需检查 bound_platform
     mcols = {row[1] for row in conn.execute("PRAGMA table_info(machines)").fetchall()}
     if mcols and "bound_platform" not in mcols:
         conn.execute(
             "ALTER TABLE machines ADD COLUMN bound_platform TEXT NOT NULL DEFAULT ''"
+        )
+    # 清洗「假旗舰」：平台占位行（无付费时长）统一标为 free
+    if mcols and "plan" in mcols:
+        conn.execute(
+            "UPDATE machines SET plan = 'free' "
+            "WHERE expires_at = ? AND IFNULL(plan, '') != 'free'",
+            (_PLATFORM_STUB_EXPIRES,),
         )
     conn.execute(
         "CREATE TABLE IF NOT EXISTS events ("
@@ -240,6 +322,31 @@ def _migrate(conn):
         "CREATE INDEX IF NOT EXISTS idx_events_machine_day ON events(machine_id, created_at)"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_events_name ON events(name)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS feedbacks ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "machine_id TEXT NOT NULL,"
+        "category TEXT NOT NULL,"
+        "title TEXT NOT NULL,"
+        "body TEXT NOT NULL,"
+        "contact TEXT NOT NULL DEFAULT '',"
+        "app_version TEXT NOT NULL DEFAULT '',"
+        "plan TEXT NOT NULL DEFAULT '',"
+        "bound_platform TEXT NOT NULL DEFAULT '',"
+        "status TEXT NOT NULL DEFAULT 'open',"
+        "image_count INTEGER NOT NULL DEFAULT 0,"
+        "client_created_at TEXT,"
+        "created_at TEXT NOT NULL,"
+        "updated_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_feedbacks_status_created "
+        "ON feedbacks(status, created_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_feedbacks_machine_created "
+        "ON feedbacks(machine_id, created_at)"
+    )
 
 
 def init_db():
@@ -317,9 +424,10 @@ def _active_plan(conn, mid):
     if exp_dt is None or exp_dt < _now_utc():
         return None
     try:
-        return _normalize_plan(row["plan"])
+        p = _normalize_plan(row["plan"], default="flagship")
     except (KeyError, IndexError):
         return "flagship"
+    return None if p == "free" else p
 
 
 def _redeem_plan_decision(current_plan, card_plan):
@@ -327,10 +435,10 @@ def _redeem_plan_decision(current_plan, card_plan):
     同档续费、高档升级；低档卡在高档未到期时拒绝（调用方须尚未烧卡）。
     返回 (ok, error, result_plan)。
     """
-    card_n = _normalize_plan(card_plan)
-    if not current_plan:
+    card_n = _normalize_card_plan(card_plan)
+    if not current_plan or current_plan == "free":
         return True, "", card_n
-    cur_n = _normalize_plan(current_plan)
+    cur_n = _normalize_plan(current_plan, default="flagship")
     if card_n == cur_n:
         return True, "", card_n
     if _plan_rank(card_n) > _plan_rank(cur_n):
@@ -354,7 +462,7 @@ def _stack_machine_expires(conn, mid, days, plan="flagship"):
         cur = _parse_expires(row["expires_at"])
         if cur is not None and cur > now:
             base = cur
-    new_plan = _normalize_plan(plan)
+    new_plan = _normalize_card_plan(plan)
     new_exp = base + timedelta(days=int(days))
     exp_s = _fmt_expires_utc(new_exp)
     updated = _now_iso()
@@ -409,7 +517,7 @@ def redeem(card, machine_id=""):
                 return 400, _payload_base(ok=False, error="卡密天数无效，未核销")
 
             try:
-                card_plan = _normalize_plan(row["plan"])
+                card_plan = _normalize_card_plan(row["plan"])
             except (KeyError, IndexError):
                 card_plan = "flagship"
 
@@ -434,7 +542,7 @@ def redeem(card, machine_id=""):
                     ).fetchone()
                     if row2 and (row2["redeemed_by"] or "").lower() == mid:
                         m = _get_machine(conn, mid)
-                        mplan = _normalize_plan(
+                        mplan = _normalize_card_plan(
                             m["plan"] if m is not None else card_plan
                         )
                         return 200, _with_bound_platform(
@@ -477,7 +585,7 @@ def redeem(card, machine_id=""):
             bound = (row["redeemed_by"] or "").strip().lower()
             if bound and bound == mid:
                 m = _get_machine(conn, mid)
-                mplan = _normalize_plan(m["plan"] if m is not None else card_plan)
+                mplan = _normalize_card_plan(m["plan"] if m is not None else card_plan)
                 return 200, _with_bound_platform(
                     _attach_token(
                         _payload_base(
@@ -501,6 +609,7 @@ def validate(machine_id="", bound_platform=""):
     """启动心跳：返回服务端时间与该机登记到期/档位/绑定平台；可检测吊销。
 
     可选 bound_platform：若服务端尚未绑定且客户端已有合法平台，则治愈写入（防本地清后丢锁）。
+    未知机器首次心跳写入 free 占位行（累计「打开过」），响应仍为 known=false。
     """
     mid = _normalize_machine_id(machine_id)
     if not mid:
@@ -514,16 +623,26 @@ def validate(machine_id="", bound_platform=""):
             _migrate(conn)
             row = _get_machine(conn, mid)
             if row is None:
+                # 首见即登记：未激活/未绑平台也计入累计使用机器
+                updated = _now_iso()
+                conn.execute(
+                    "INSERT INTO machines "
+                    "(machine_id, expires_at, updated_at, revoked, plan, bound_platform) "
+                    "VALUES (?, ?, ?, 0, 'free', ?)",
+                    (mid, _PLATFORM_STUB_EXPIRES, updated, client_plat),
+                )
+                conn.commit()
                 return 200, _with_bound_platform(
                     _payload_base(
                         ok=True,
                         known=False,
                         revoked=False,
+                        expired=True,
                         expires_at="",
                         plan="free",
                         max_accounts=1,
                     ),
-                    "",
+                    client_plat,
                 )
             revoked = int(row["revoked"] or 0) != 0
             exp = row["expires_at"] or ""
@@ -531,7 +650,7 @@ def validate(machine_id="", bound_platform=""):
             now = _now_utc()
             expired = exp_dt is None or exp_dt < now
             try:
-                plan = _normalize_plan(row["plan"])
+                plan = _normalize_plan(row["plan"], default="flagship")
             except (KeyError, IndexError):
                 plan = "flagship"
             current_bound = _row_bound_platform(row)
@@ -544,6 +663,13 @@ def validate(machine_id="", bound_platform=""):
                 )
                 conn.commit()
                 current_bound = client_plat
+            else:
+                # last_seen：刷新 updated_at，不影响授权
+                conn.execute(
+                    "UPDATE machines SET updated_at = ? WHERE machine_id = ?",
+                    (_now_iso(), mid),
+                )
+                conn.commit()
 
             # 仅平台占位（尚未核销）：known=false，但仍带回 bound_platform 供客户端锁定
             if not revoked and exp == _PLATFORM_STUB_EXPIRES:
@@ -621,7 +747,7 @@ def bind_platform(machine_id="", platform=""):
                 conn.execute(
                     "INSERT INTO machines "
                     "(machine_id, expires_at, updated_at, revoked, plan, bound_platform) "
-                    "VALUES (?, ?, ?, 0, 'flagship', ?)",
+                    "VALUES (?, ?, ?, 0, 'free', ?)",
                     (mid, _PLATFORM_STUB_EXPIRES, updated, plat),
                 )
             else:
@@ -749,6 +875,322 @@ def ingest_telemetry(machine_id="", events=None):
             return 200, _payload_base(ok=True, accepted=len(rows))
         finally:
             conn.close()
+
+
+def _decode_feedback_images(raw_images):
+    """解析并校验截图：最多 3 张 JPEG，单张 ≤450KB。返回 [(index, bytes), ...] 或 (None, error)。"""
+    if raw_images is None:
+        return [], ""
+    if not isinstance(raw_images, list):
+        return None, "截图格式无效"
+    if len(raw_images) > _FEEDBACK_MAX_IMAGES:
+        return None, "最多上传 %d 张截图" % _FEEDBACK_MAX_IMAGES
+    out = []
+    for i, item in enumerate(raw_images):
+        data_b64 = ""
+        if isinstance(item, str):
+            data_b64 = item
+        elif isinstance(item, dict):
+            data_b64 = str(item.get("data") or "")
+            mime = str(item.get("mime") or "").strip().lower()
+            if mime and mime not in ("image/jpeg", "image/jpg"):
+                return None, "截图仅支持 JPEG"
+        else:
+            return None, "截图格式无效"
+        data_b64 = data_b64.strip()
+        if data_b64.startswith("data:"):
+            # data:image/jpeg;base64,xxxx
+            comma = data_b64.find(",")
+            if comma < 0:
+                return None, "截图数据无效"
+            header = data_b64[:comma].lower()
+            if "image/png" in header:
+                return None, "截图仅支持 JPEG"
+            data_b64 = data_b64[comma + 1 :]
+        if not data_b64:
+            continue
+        try:
+            raw = base64.b64decode(data_b64)
+        except Exception:
+            return None, "截图解码失败"
+        if len(raw) > _FEEDBACK_MAX_IMAGE_BYTES:
+            return None, "单张截图过大，请压缩后重试"
+        if len(raw) < 24 or not raw.startswith(_JPEG_MAGIC):
+            return None, "截图仅支持 JPEG"
+        out.append((len(out), raw))
+    return out, ""
+
+
+def ingest_feedback(
+    machine_id="",
+    category="",
+    title="",
+    body="",
+    contact="",
+    app_version="",
+    plan="",
+    bound_platform="",
+    created_at="",
+    images=None,
+):
+    """写入用户反馈；截图落盘，库中只存张数。"""
+    mid = _normalize_machine_id(machine_id)
+    if not mid:
+        return 400, _payload_base(ok=False, error="缺少本机标识")
+
+    cat = str(category or "").strip().lower()
+    if cat not in _FEEDBACK_CATEGORIES:
+        return 400, _payload_base(ok=False, error="请选择反馈类型")
+
+    title_text = re.sub(r"\s+", " ", str(title or "").strip())
+    if not title_text:
+        return 400, _payload_base(ok=False, error="请填写标题")
+    if len(title_text) > _FEEDBACK_MAX_TITLE:
+        return 400, _payload_base(ok=False, error="标题过长")
+
+    body_text = str(body or "").strip()
+    if not body_text:
+        return 400, _payload_base(ok=False, error="请填写描述")
+    if len(body_text) > _FEEDBACK_MAX_BODY:
+        return 400, _payload_base(ok=False, error="描述过长")
+
+    contact_text = re.sub(r"\s+", " ", str(contact or "").strip())[:_FEEDBACK_MAX_CONTACT]
+    ver = re.sub(r"[^0-9A-Za-z.\-+_]", "", str(app_version or "").strip())[:32]
+    plan_n = str(plan or "").strip().lower()
+    if plan_n not in ("free", "pro", "flagship", ""):
+        plan_n = ""
+    plat = _normalize_platform(bound_platform)
+
+    image_rows, img_err = _decode_feedback_images(images)
+    if img_err:
+        return 400, _payload_base(ok=False, error=img_err)
+
+    client_created = None
+    raw_ts = str(created_at or "").strip()
+    if raw_ts:
+        parsed = _parse_expires(raw_ts)
+        if parsed is not None:
+            skew = abs((_now_utc() - parsed).total_seconds())
+            if skew <= 48 * 3600:
+                client_created = parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    now = _now_iso()
+    cutoff = (_now_utc() - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    with _db_lock:
+        conn = _connect()
+        try:
+            _migrate(conn)
+            recent = conn.execute(
+                "SELECT COUNT(*) AS c FROM feedbacks "
+                "WHERE machine_id = ? AND created_at >= ?",
+                (mid, cutoff),
+            ).fetchone()
+            if recent and int(recent["c"] or 0) >= _FEEDBACK_RATE_PER_HOUR:
+                return 429, _payload_base(
+                    ok=False, error="提交过于频繁，请稍后再试"
+                )
+
+            cur = conn.execute(
+                "INSERT INTO feedbacks ("
+                "machine_id, category, title, body, contact, app_version, plan, "
+                "bound_platform, status, image_count, client_created_at, created_at, updated_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)",
+                (
+                    mid,
+                    cat,
+                    title_text,
+                    body_text,
+                    contact_text,
+                    ver,
+                    plan_n,
+                    plat,
+                    len(image_rows),
+                    client_created,
+                    now,
+                    now,
+                ),
+            )
+            fid = int(cur.lastrowid)
+            for idx, raw in image_rows:
+                path = _feedback_image_path(fid, idx)
+                with open(path, "wb") as f:
+                    f.write(raw)
+            conn.commit()
+            return 200, _payload_base(ok=True, id=fid)
+        except Exception as exc:
+            conn.rollback()
+            return 500, _payload_base(ok=False, error="保存失败: %s" % exc)
+        finally:
+            conn.close()
+
+
+def list_user_feedback(machine_id="", limit=50):
+    """客户端按本机指纹拉取自己的反馈记录（含处理后状态）。"""
+    mid = _normalize_machine_id(machine_id)
+    if not mid:
+        return 400, _payload_base(ok=False, error="缺少本机标识")
+    try:
+        lim = max(1, min(100, int(limit)))
+    except (TypeError, ValueError):
+        lim = 50
+
+    with _db_lock:
+        conn = _connect()
+        try:
+            _migrate(conn)
+            rows = conn.execute(
+                "SELECT id, category, title, body, contact, app_version, plan, "
+                "bound_platform, status, image_count, created_at, updated_at "
+                "FROM feedbacks WHERE machine_id = ? "
+                "ORDER BY created_at DESC LIMIT ?",
+                (mid, lim),
+            ).fetchall()
+            items = []
+            for r in rows:
+                items.append(
+                    {
+                        "id": int(r["id"]),
+                        "category": r["category"],
+                        "title": r["title"],
+                        "body": r["body"],
+                        "contact": r["contact"] or "",
+                        "app_version": r["app_version"] or "",
+                        "plan": r["plan"] or "",
+                        "bound_platform": r["bound_platform"] or "",
+                        "status": r["status"] or "open",
+                        "image_count": int(r["image_count"] or 0),
+                        "created_at": r["created_at"],
+                        "updated_at": r["updated_at"],
+                    }
+                )
+            return 200, _payload_base(ok=True, items=items, total=len(items))
+        finally:
+            conn.close()
+
+
+def admin_list_feedback(status="", limit=50, offset=0):
+    st = str(status or "").strip().lower()
+    if st and st not in _FEEDBACK_STATUSES:
+        return 400, {"ok": False, "error": "无效状态"}
+    try:
+        lim = max(1, min(100, int(limit)))
+    except (TypeError, ValueError):
+        lim = 50
+    try:
+        off = max(0, int(offset))
+    except (TypeError, ValueError):
+        off = 0
+
+    with _db_lock:
+        conn = _connect()
+        try:
+            _migrate(conn)
+            where = ""
+            args = []
+            if st:
+                where = "WHERE status = ?"
+                args.append(st)
+            total_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM feedbacks " + where, args
+            ).fetchone()
+            open_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM feedbacks WHERE status = 'open'"
+            ).fetchone()
+            rows = conn.execute(
+                "SELECT id, machine_id, category, title, body, contact, app_version, "
+                "plan, bound_platform, status, image_count, client_created_at, "
+                "created_at, updated_at FROM feedbacks "
+                + where
+                + " ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                args + [lim, off],
+            ).fetchall()
+            items = []
+            for r in rows:
+                mid = str(r["machine_id"] or "")
+                items.append(
+                    {
+                        "id": int(r["id"]),
+                        "machine": mid[-8:] if len(mid) >= 8 else mid,
+                        "machine_id": mid,
+                        "category": r["category"],
+                        "title": r["title"],
+                        "body": r["body"],
+                        "contact": r["contact"] or "",
+                        "app_version": r["app_version"] or "",
+                        "plan": r["plan"] or "",
+                        "bound_platform": r["bound_platform"] or "",
+                        "status": r["status"] or "open",
+                        "image_count": int(r["image_count"] or 0),
+                        "client_created_at": r["client_created_at"],
+                        "created_at": r["created_at"],
+                        "updated_at": r["updated_at"],
+                    }
+                )
+            return 200, {
+                "ok": True,
+                "total": int(total_row["c"] or 0) if total_row else 0,
+                "open_count": int(open_row["c"] or 0) if open_row else 0,
+                "items": items,
+                "limit": lim,
+                "offset": off,
+            }
+        finally:
+            conn.close()
+
+
+def admin_update_feedback_status(feedback_id, status=""):
+    try:
+        fid = int(feedback_id)
+    except (TypeError, ValueError):
+        return 400, {"ok": False, "error": "无效编号"}
+    st = str(status or "").strip().lower()
+    if st not in _FEEDBACK_STATUSES:
+        return 400, {"ok": False, "error": "无效状态"}
+    now = _now_iso()
+    with _db_lock:
+        conn = _connect()
+        try:
+            _migrate(conn)
+            cur = conn.execute(
+                "UPDATE feedbacks SET status = ?, updated_at = ? WHERE id = ?",
+                (st, now, fid),
+            )
+            if cur.rowcount <= 0:
+                return 404, {"ok": False, "error": "反馈不存在"}
+            conn.commit()
+            return 200, {"ok": True, "id": fid, "status": st}
+        finally:
+            conn.close()
+
+
+def admin_read_feedback_image(feedback_id, index):
+    try:
+        fid = int(feedback_id)
+        idx = int(index)
+    except (TypeError, ValueError):
+        return 400, None, "无效参数"
+    if idx < 0 or idx >= _FEEDBACK_MAX_IMAGES:
+        return 400, None, "无效图片序号"
+    with _db_lock:
+        conn = _connect()
+        try:
+            _migrate(conn)
+            row = conn.execute(
+                "SELECT image_count FROM feedbacks WHERE id = ?", (fid,)
+            ).fetchone()
+            if not row:
+                return 404, None, "反馈不存在"
+            if idx >= int(row["image_count"] or 0):
+                return 404, None, "图片不存在"
+        finally:
+            conn.close()
+    path = _feedback_image_path(fid, idx)
+    if not os.path.isfile(path):
+        return 404, None, "图片文件缺失"
+    with open(path, "rb") as f:
+        data = f.read()
+    return 200, data, ""
 
 
 def _admin_token_expected():
@@ -883,6 +1325,11 @@ def admin_stats(day="", days=7, platform="", plan=""):
                 (now_iso, _PLATFORM_STUB_EXPIRES),
             ).fetchone()
             licensed_n = int(licensed["c"] if licensed else 0)
+            # 累计「打开过」：曾 /validate（或核销/绑平台）落库的本机指纹
+            total_seen = conn.execute(
+                "SELECT COUNT(*) AS c FROM machines"
+            ).fetchone()
+            total_seen_n = int(total_seen["c"] if total_seen else 0)
 
             # 趋势
             trend = []
@@ -996,7 +1443,7 @@ def admin_stats(day="", days=7, platform="", plan=""):
                     }
                 )
 
-            # 机器明细（短哈希）
+            # 机器明细（短哈希）；档位按有效授权口径（占位/过期=free）
             machine_sql = (
                 "SELECT e.machine_id AS mid,"
                 "SUM(CASE WHEN e.name='app_launch' THEN 1 ELSE 0 END) AS launches,"
@@ -1005,6 +1452,8 @@ def admin_stats(day="", days=7, platform="", plan=""):
                 "json_extract(e.props, '$.result')='ok' THEN 1 ELSE 0 END) AS connected,"
                 "MAX(json_extract(e.props, '$.platform')) AS platform,"
                 "COALESCE(m.plan, '') AS plan,"
+                "COALESCE(m.expires_at, '') AS expires_at,"
+                "COALESCE(m.revoked, 0) AS revoked,"
                 "COALESCE(m.bound_platform, '') AS bound_platform "
                 "FROM events e LEFT JOIN machines m ON m.machine_id = e.machine_id "
                 "WHERE e.created_at >= ? AND e.created_at < ?"
@@ -1013,9 +1462,18 @@ def admin_stats(day="", days=7, platform="", plan=""):
             if plat_filter:
                 machine_sql += " AND json_extract(e.props, '$.platform') = ?"
                 m_args.append(plat_filter)
-            if plan_filter:
-                machine_sql += " AND COALESCE(m.plan, '') = ?"
-                m_args.append(plan_filter)
+            if plan_filter == "free":
+                machine_sql += (
+                    " AND (m.machine_id IS NULL OR COALESCE(m.plan, '') = 'free' "
+                    "OR m.expires_at = ? OR m.expires_at <= ? OR IFNULL(m.revoked, 0) != 0)"
+                )
+                m_args.extend([_PLATFORM_STUB_EXPIRES, now_iso])
+            elif plan_filter in ("pro", "flagship"):
+                machine_sql += (
+                    " AND COALESCE(m.plan, '') = ? AND IFNULL(m.revoked, 0) = 0 "
+                    "AND m.expires_at > ? AND m.expires_at != ?"
+                )
+                m_args.extend([plan_filter, now_iso, _PLATFORM_STUB_EXPIRES])
             machine_sql += " GROUP BY e.machine_id ORDER BY launches DESC, tasks DESC LIMIT 200"
 
             machines = []
@@ -1028,7 +1486,7 @@ def admin_stats(day="", days=7, platform="", plan=""):
                         "tasks": int(row["tasks"] or 0),
                         "connected": bool(row["connected"]),
                         "platform": row["platform"] or row["bound_platform"] or "",
-                        "plan": _normalize_plan(row["plan"]) if row["plan"] else "",
+                        "plan": _effective_machine_plan(row),
                     }
                 )
 
@@ -1068,6 +1526,7 @@ def admin_stats(day="", days=7, platform="", plan=""):
                     "connect_rate": connect_rate,
                     "machine_connect_rate": machine_connect_rate,
                     "licensed_machines": licensed_n,
+                    "total_seen_machines": total_seen_n,
                 },
                 "trend": trend,
                 "platforms": platforms,
@@ -1118,12 +1577,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
-    def _read_json(self):
+    def _read_json(self, max_bytes=None):
+        limit = MAX_BODY_BYTES if max_bytes is None else max_bytes
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             return None
-        if length < 0 or length > MAX_BODY_BYTES:
+        if length < 0 or length > limit:
             return None
         raw = self.rfile.read(length) if length > 0 else b""
         try:
@@ -1145,6 +1605,17 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return hmac_mod.compare_digest(got, expect)
 
+    def _require_admin_api(self):
+        if not ADMIN_PASSWORD:
+            self._send_json(
+                503, {"ok": False, "error": "看板未启用：请配置 BGJ_ADMIN_PASSWORD"}
+            )
+            return False
+        if not self._admin_authorized():
+            self._send_json(401, {"ok": False, "error": "未登录或令牌无效"})
+            return False
+        return True
+
     def _send_html(self, status, body_bytes):
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1152,6 +1623,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body_bytes)
+
+    def _send_bytes(self, status, data, content_type):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
 
     def _send_text(self, status, text, content_type="text/plain; charset=utf-8"):
         body = text.encode("utf-8")
@@ -1168,24 +1647,49 @@ class Handler(BaseHTTPRequestHandler):
             "/validate",
             "/bind-platform",
             "/telemetry",
+            "/feedback",
+            "/feedback/list",
             "/admin/login",
+            "/admin/api/feedback/status",
         ):
             self._send_json(404, _payload_base(ok=False, error="Not Found"))
+            return
+
+        if path == "/admin/api/feedback/status":
+            if not self._require_admin_api():
+                return
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if length < 0 or length > MAX_BODY_BYTES:
+                self._send_json(413, {"ok": False, "error": "请求体过大"})
+                return
+            payload = self._read_json()
+            if payload is None:
+                self._send_json(400, {"ok": False, "error": "无效 JSON"})
+                return
+            status, data = admin_update_feedback_status(
+                payload.get("id"),
+                str(payload.get("status") or ""),
+            )
+            self._send_json(status, data)
             return
 
         if not allow_request(self._client_ip()):
             self._send_json(429, _payload_base(ok=False, error="请求过于频繁，请稍后再试"))
             return
 
+        max_body = MAX_FEEDBACK_BODY_BYTES if path == "/feedback" else MAX_BODY_BYTES
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = -1
-        if length < 0 or length > MAX_BODY_BYTES:
+        if length < 0 or length > max_body:
             self._send_json(413, _payload_base(ok=False, error="请求体过大"))
             return
 
-        payload = self._read_json()
+        payload = self._read_json(max_bytes=max_body)
         if payload is None:
             self._send_json(400, _payload_base(ok=False, error="无效 JSON"))
             return
@@ -1215,6 +1719,24 @@ class Handler(BaseHTTPRequestHandler):
                 str(payload.get("machine_id") or ""),
                 payload.get("events"),
             )
+        elif path == "/feedback":
+            status, data = ingest_feedback(
+                machine_id=str(payload.get("machine_id") or ""),
+                category=str(payload.get("category") or ""),
+                title=str(payload.get("title") or ""),
+                body=str(payload.get("body") or ""),
+                contact=str(payload.get("contact") or ""),
+                app_version=str(payload.get("app_version") or ""),
+                plan=str(payload.get("plan") or ""),
+                bound_platform=str(payload.get("bound_platform") or ""),
+                created_at=str(payload.get("created_at") or ""),
+                images=payload.get("images"),
+            )
+        elif path == "/feedback/list":
+            status, data = list_user_feedback(
+                machine_id=str(payload.get("machine_id") or ""),
+                limit=payload.get("limit") or 50,
+            )
         else:
             status, data = validate(
                 str(payload.get("machine_id") or ""),
@@ -1240,13 +1762,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/admin/api/stats":
-            if not ADMIN_PASSWORD:
-                self._send_json(
-                    503, {"ok": False, "error": "看板未启用：请配置 BGJ_ADMIN_PASSWORD"}
-                )
-                return
-            if not self._admin_authorized():
-                self._send_json(401, {"ok": False, "error": "未登录或令牌无效"})
+            if not self._require_admin_api():
                 return
             qs = parse_qs(parsed.query or "")
             day = (qs.get("day") or [""])[0]
@@ -1255,6 +1771,31 @@ class Handler(BaseHTTPRequestHandler):
             plan = (qs.get("plan") or [""])[0]
             status, data = admin_stats(day=day, days=days, platform=platform, plan=plan)
             self._send_json(status, data)
+            return
+
+        if path == "/admin/api/feedback":
+            if not self._require_admin_api():
+                return
+            qs = parse_qs(parsed.query or "")
+            status, data = admin_list_feedback(
+                status=(qs.get("status") or [""])[0],
+                limit=(qs.get("limit") or ["50"])[0],
+                offset=(qs.get("offset") or ["0"])[0],
+            )
+            self._send_json(status, data)
+            return
+
+        img_match = re.match(r"^/admin/api/feedback/(\d+)/image/(\d+)$", path)
+        if img_match:
+            if not self._require_admin_api():
+                return
+            status, data, err = admin_read_feedback_image(
+                img_match.group(1), img_match.group(2)
+            )
+            if status != 200 or data is None:
+                self._send_json(status, {"ok": False, "error": err or "读取失败"})
+                return
+            self._send_bytes(200, data, "image/jpeg")
             return
 
         self._send_json(404, _payload_base(ok=False, error="Not Found"))
